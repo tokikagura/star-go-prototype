@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>星囲碁 プロトタイプ</title>
+  <style>
+/* ════════════════════════════════
+   リセット・基礎
+════════════════════════════════ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Courier New', monospace;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  min-height: 100vh;
+  padding: 10px;
+}
+
+/* ════════════════════════════════
+   レイアウト: メイン列
+════════════════════════════════ */
+#app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+/* ════════════════════════════════
+   タイトル
+════════════════════════════════ */
+#title-bar {
+  font-size: 1.1rem;
+  color: #ffd700;
+  letter-spacing: 2px;
+  text-align: center;
+  padding: 2px 0;
+}
+
+/* ════════════════════════════════
+   ステータスバー
+════════════════════════════════ */
+#status-bar {
+  width: 100%;
+  font-size: 0.95rem;
+  padding: 8px 14px;
+  background: #0f3460;
+  border-radius: 6px;
+  min-height: 2.2em;
+  text-align: center;
+}
+#status-bar span { font-weight: bold; color: #ffd700; }
+
+/* ════════════════════════════════
+   盤面
+════════════════════════════════ */
+#board-wrap {
+  width: 100%;
+  /* 盤を画面幅いっぱいに正方形で収める */
+}
+#board-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+  border: 2px solid #555;
+  border-radius: 4px;
+  touch-action: none; /* スクロール防止 */
+}
+
+/* ════════════════════════════════
+   星石パネル（常時表示）
+════════════════════════════════ */
+#star-panel {
+  width: 100%;
+  background: #16213e;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+.star-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.star-badge {
+  font-size: 1.4rem;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.2s, text-shadow 0.2s;
+  line-height: 1;
+}
+.star-badge.used   { opacity: 0.25; cursor: default; }
+.star-badge.active { text-shadow: 0 0 10px gold; }
+.star-label        { font-size: 0.8rem; color: #bbb; }
+
+/* ════════════════════════════════
+   主要ボタン行（常時表示）
+════════════════════════════════ */
+#main-btns {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+}
+#main-btns button { flex: 1; }
+
+/* ════════════════════════════════
+   ボタン共通スタイル
+════════════════════════════════ */
+button.action {
+  padding: 9px 10px;
+  border: 1px solid #555;
+  border-radius: 5px;
+  background: #2a2a4a;
+  color: #e0e0e0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+button.action:hover  { background: #3a3a6a; }
+button.action:active { background: #4a4a8a; }
+button.action.primary { background: #0f3460; border-color: #4a7abc; color: #fff; }
+button.action.danger  { background: #5a1a1a; border-color: #aa4444; color: #fff; }
+
+/* ════════════════════════════════
+   折りたたみ「詳細」セクション
+════════════════════════════════ */
+#detail-section {
+  width: 100%;
+}
+
+/* 詳細トグルボタン */
+#btn-detail-toggle {
+  width: 100%;
+  padding: 9px;
+  background: #1e2a4a;
+  border: 1px solid #3a4a6a;
+  border-radius: 6px;
+  color: #aac4ff;
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 0.15s;
+}
+#btn-detail-toggle:hover { background: #263562; }
+#detail-arrow { transition: transform 0.25s; display: inline-block; }
+#detail-arrow.open { transform: rotate(180deg); }
+
+/* 詳細コンテンツ */
+#detail-content {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+#detail-content.open { display: flex; }
+
+/* ────── 詳細内のカード ────── */
+.card {
+  background: #16213e;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.card h2 {
+  font-size: 0.8rem;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+/* ────── 統計グリッド ────── */
+#stats-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 16px;
+  font-size: 0.82rem;
+}
+#stats-grid .key { color: #888; white-space: nowrap; }
+#stats-grid .val { color: #ffd700; }
+
+/* ────── 棋譜ログ ────── */
+#move-log {
+  font-size: 0.78rem;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.7;
+  color: #bbb;
+}
+#move-log .star-move { color: #ffd700; }
+#move-log .pass-move { color: #80c080; }
+
+/* ────── 設定 ────── */
+select { 
+  background: #2a2a4a;
+  color: #e0e0e0;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 0.82rem;
+}
+input[type=radio] { accent-color: #ffd700; }
+label { font-size: 0.82rem; cursor: pointer; }
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 5px 0;
+  flex-wrap: wrap;
+}
+
+/* ════════════════════════════════
+   星石色選択ポップアップ
+════════════════════════════════ */
+#star-picker {
+  display: none;
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: #16213e;
+  border: 2px solid #ffd700;
+  border-radius: 10px;
+  padding: 16px 20px;
+  z-index: 200;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+  text-align: center;
+  min-width: 220px;
+}
+#star-picker.visible { display: block; }
+#star-picker p { font-size: 0.9rem; margin-bottom: 12px; color: #ccc; }
+#star-picker .pick-row { display: flex; gap: 10px; justify-content: center; }
+#star-picker button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: inherit;
+  font-weight: bold;
+}
+#star-pick-black  { background: #222; color: #fff; border: 2px solid #555 !important; }
+#star-pick-white  { background: #eee; color: #000; border: 2px solid #aaa !important; }
+#star-pick-cancel { background: #444; color: #eee; margin-top: 10px; width: 100%; }
+
+/* ════════════════════════════════
+   オーバーレイ（ポップアップ背景）
+════════════════════════════════ */
+#overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 190;
+}
+#overlay.visible { display: block; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <div id="title-bar">★ 星囲碁 プロトタイプ</div>
+
+  <!-- 手番・状態 -->
+  <div id="status-bar">準備中…</div>
+
+  <!-- 盤面 -->
+  <div id="board-wrap">
+    <canvas id="board-canvas"></canvas>
+  </div>
+
+  <!-- 星石状態（人間 vs CPU のみ表示） -->
+  <div id="star-panel">
+    <div class="star-row">
+      <span class="star-badge" id="star-human" title="星石を使う">★</span>
+      <span class="star-label" id="star-human-label">あなたの星石（未使用）</span>
+    </div>
+  </div>
+
+  <!-- 主要ボタン -->
+  <div id="main-btns">
+    <button class="action" id="btn-pass">パス</button>
+    <button class="action danger" id="btn-resign">投了</button>
+    <button class="action" id="btn-reset">リセット</button>
+  </div>
+
+  <!-- 詳細セクション（折りたたみ） -->
+  <div id="detail-section">
+
+    <button id="btn-detail-toggle">
+      詳細（統計・棋譜・設定）
+      <span id="detail-arrow">▼</span>
+    </button>
+
+    <div id="detail-content">
+
+      <!-- モード設定 -->
+      <div class="card">
+        <h2>モード設定</h2>
+        <div class="setting-row">
+          <label>モード:</label>
+          <select id="sel-mode">
+            <option value="human-cpu">人間 vs ランダムCPU</option>
+            <option value="cpu-cpu">CPU vs CPU 自動対局</option>
+          </select>
+        </div>
+        <div class="setting-row">
+          <label>人間の色:</label>
+          <select id="sel-color">
+            <option value="0">黒</option>
+            <option value="1">白</option>
+          </select>
+        </div>
+        <div style="margin-top:10px;">
+          <button class="action primary" id="btn-start">ゲーム開始</button>
+        </div>
+      </div>
+
+      <!-- 失効条件 -->
+      <div class="card">
+        <h2>星石 失効条件</h2>
+        <div class="setting-row">
+          <input type="radio" name="expire" id="exp0" value="0" checked>
+          <label for="exp0">1. 失効なし</label>
+        </div>
+        <div class="setting-row">
+          <input type="radio" name="expire" id="exp1" value="1">
+          <label for="exp1">2. 空点数 ≤25 で使用不可</label>
+        </div>
+        <div class="setting-row">
+          <input type="radio" name="expire" id="exp2" value="2">
+          <label for="exp2">3. 初回パス後に使用不可</label>
+        </div>
+      </div>
+
+      <!-- 統計 -->
+      <div class="card">
+        <h2>統計</h2>
+        <div id="stats-grid">
+          <span class="key">総手数</span>        <span class="val" id="st-moves">0</span>
+          <span class="key">パス回数</span>       <span class="val" id="st-pass">0</span>
+          <span class="key">黒 星石使用手</span>  <span class="val" id="st-star-b">—</span>
+          <span class="key">白 星石使用手</span>  <span class="val" id="st-star-w">—</span>
+        </div>
+      </div>
+
+      <!-- 棋譜 -->
+      <div class="card">
+        <h2>棋譜ログ</h2>
+        <div id="move-log"></div>
+      </div>
+
+    </div><!-- /detail-content -->
+  </div><!-- /detail-section -->
+
+</div><!-- /app -->
+
+<!-- 星石色選択ポップアップ -->
+<div id="overlay"></div>
+<div id="star-picker">
+  <p>★ 星石の色を選択</p>
+  <div class="pick-row">
+    <button id="star-pick-black">⚫ 黒</button>
+    <button id="star-pick-white">⚪ 白</button>
+  </div>
+  <button id="star-pick-cancel">キャンセル</button>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  エラー画面表示ヘルパー（Safari 初期化失敗を可視化）
+// ═══════════════════════════════════════════════════════════
+function showFatalError(msg) {
+  try {
+    const sb = document.getElementById('status-bar');
+    if (sb) sb.innerHTML = '<span style="color:#ff6666">⛔ 初期化エラー: ' + msg + '</span>';
+  } catch(e) {}
+  const errDiv = document.createElement('div');
+  errDiv.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#5a0000;color:#fff;padding:12px 16px;font-size:0.9rem;z-index:9999;white-space:pre-wrap;word-break:break-all;';
+  errDiv.textContent = '⛔ 初期化エラー:\n' + msg;
+  document.body.insertBefore(errDiv, document.body.firstChild);
+}
+
+// グローバルエラーもキャッチ
+window.onerror = function(message, source, lineno, colno, error) {
+  showFatalError(message + ' (line ' + lineno + ')');
+  return false;
+};
+
+// ═══════════════════════════════════════════════════════════
+//  DOM 読み込み完了後に全処理を開始
+// ═══════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', function() {
+try {
+
+// ═══════════════════════════════════════════════════════════
+//  定数
+// ═══════════════════════════════════════════════════════════
+const SIZE   = 9;
+const CELL   = 52;        // 内部解像度のマス幅 (px)
+const MARGIN = 36;        // 内部解像度の余白
+const CANVAS_PX = CELL * (SIZE - 1) + MARGIN * 2; // 内部解像度
+
+const BLACK = 0;
+const WHITE = 1;
+const EMPTY = -1;
+
+// ═══════════════════════════════════════════════════════════
+//  Canvas セットアップ
+// ═══════════════════════════════════════════════════════════
+const canvas = document.getElementById('board-canvas');
+if (!canvas) throw new Error('board-canvas 要素が見つかりません');
+const ctx = canvas.getContext('2d');
+if (!ctx) throw new Error('Canvas 2D コンテキストを取得できません（Safari設定でCanvas無効の可能性）');
+canvas.width  = CANVAS_PX;
+canvas.height = CANVAS_PX;
+
+// ═══════════════════════════════════════════════════════════
+//  ゲーム状態
+// ═══════════════════════════════════════════════════════════
+let board    = [];
+let current  = BLACK;
+let koPoint  = null;   // {x, y} | null
+let gameOver = false;
+
+let starStones = new Set(); // "x,y" → 星石位置
+let starUsed   = [false, false];
+let starMoveNo = [null, null];
+let starPending      = false;  // 人間が星石モードで配置待ち
+let pendingStarColor = null;
+
+let totalMoves        = 0;
+let passCnt           = 0;
+let consecutivePasses = 0;
+let firstPassDone     = false;
+let moveLog           = [];
+
+let gameMode   = 'human-cpu';
+let humanColor = BLACK;
+let expireMode = 0;
+
+let cpuTimer = null;
+
+const CPU_STAR_PROB = 0.15;
+
+// ═══════════════════════════════════════════════════════════
+//  盤面描画
+// ═══════════════════════════════════════════════════════════
+function drawBoard() {
+  // 背景（木目色）
+  ctx.fillStyle = '#c8a96e';
+  ctx.fillRect(0, 0, CANVAS_PX, CANVAS_PX);
+
+  // グリッド線
+  ctx.strokeStyle = '#5a3e1b';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < SIZE; i++) {
+    const p = MARGIN + i * CELL;
+    ctx.beginPath();
+    ctx.moveTo(p, MARGIN);
+    ctx.lineTo(p, MARGIN + (SIZE - 1) * CELL);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(MARGIN, p);
+    ctx.lineTo(MARGIN + (SIZE - 1) * CELL, p);
+    ctx.stroke();
+  }
+
+  // 星 (hoshi) 点
+  ctx.fillStyle = '#5a3e1b';
+  for (const hi of [2, 4, 6]) {
+    for (const hj of [2, 4, 6]) {
+      ctx.beginPath();
+      ctx.arc(MARGIN + hj * CELL, MARGIN + hi * CELL, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // 座標ラベル
+  ctx.fillStyle = '#5a3e1b';
+  ctx.font = '11px Courier New';
+  const COLS_LABEL = 'ABCDEFGHJ';
+  for (let i = 0; i < SIZE; i++) {
+    const p = MARGIN + i * CELL;
+    ctx.textAlign = 'center';
+    ctx.fillText(COLS_LABEL[i], p, MARGIN - 18);
+    ctx.fillText(COLS_LABEL[i], p, MARGIN + (SIZE - 1) * CELL + 26);
+    ctx.textAlign = 'right';
+    ctx.fillText(String(SIZE - i), MARGIN - 14, MARGIN + i * CELL + 4);
+    ctx.textAlign = 'left';
+    ctx.fillText(String(SIZE - i), MARGIN + (SIZE - 1) * CELL + 12, MARGIN + i * CELL + 4);
+  }
+
+  // 石を描画
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if (board[y][x] !== EMPTY) drawStone(x, y, board[y][x]);
+    }
+  }
+
+  // コウ禁止点マーカー
+  if (koPoint) {
+    const kx = MARGIN + koPoint.x * CELL;
+    const ky = MARGIN + koPoint.y * CELL;
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(kx - 6, ky - 6, 12, 12);
+  }
+}
+
+function drawStone(x, y, color) {
+  const cx = MARGIN + x * CELL;
+  const cy = MARGIN + y * CELL;
+  const r  = CELL * 0.44;
+  const isStar = starStones.has(`${x},${y}`);
+
+  // グラデーション
+  const grad = ctx.createRadialGradient(cx - r*0.3, cy - r*0.3, r*0.05, cx, cy, r);
+  if (color === BLACK) {
+    grad.addColorStop(0, '#555'); grad.addColorStop(1, '#111');
+  } else {
+    grad.addColorStop(0, '#fff'); grad.addColorStop(1, '#bbb');
+  }
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  if (isStar) {
+    // 金色輪郭 + ★
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.fillStyle   = color === BLACK ? '#ffd700' : '#b8860b';
+    ctx.font        = `bold ${Math.round(r * 0.9)}px serif`;
+    ctx.textAlign   = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('★', cx, cy + 1);
+    ctx.textBaseline = 'alphabetic';
+  } else {
+    ctx.strokeStyle = color === BLACK ? '#333' : '#999';
+    ctx.lineWidth   = 0.5;
+    ctx.stroke();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  囲碁ロジック
+// ═══════════════════════════════════════════════════════════
+function initBoard() {
+  board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
+  starStones.clear();
+}
+
+function inBounds(x, y) {
+  return x >= 0 && x < SIZE && y >= 0 && y < SIZE;
+}
+
+function neighbors(x, y) {
+  return [[x-1,y],[x+1,y],[x,y-1],[x,y+1]].filter(([nx,ny]) => inBounds(nx,ny));
+}
+
+// 連と呼吸点を取得
+function getGroup(x, y) {
+  const color     = board[y][x];
+  const stones    = [];
+  const liberties = new Set();
+  const visited   = new Set();
+  const stack     = [[x, y]];
+
+  while (stack.length) {
+    const [cx, cy] = stack.pop();
+    const key = `${cx},${cy}`;
+    if (visited.has(key)) continue;
+    visited.add(key);
+    stones.push([cx, cy]);
+    for (const [nx, ny] of neighbors(cx, cy)) {
+      if (board[ny][nx] === EMPTY) {
+        liberties.add(`${nx},${ny}`);
+      } else if (board[ny][nx] === color && !visited.has(`${nx},${ny}`)) {
+        stack.push([nx, ny]);
+      }
+    }
+  }
+  return { stones, liberties };
+}
+
+// 石を置く（盤を直接変更）。返り値: { ok, captured, newKo }
+function placeStone(brd, x, y, color, isStar, koP) {
+  if (brd[y][x] !== EMPTY) return { ok: false };
+  if (koP && koP.x === x && koP.y === y) return { ok: false };
+
+  brd[y][x] = color;
+  if (isStar) starStones.add(`${x},${y}`);
+
+  const opp = 1 - color;
+  const captured = [];
+
+  for (const [nx, ny] of neighbors(x, y)) {
+    if (brd[ny][nx] === opp) {
+      const g = getGroup(nx, ny);
+      if (g.liberties.size === 0) {
+        for (const [sx, sy] of g.stones) {
+          brd[sy][sx] = EMPTY;
+          starStones.delete(`${sx},${sy}`);
+          captured.push([sx, sy]);
+        }
+      }
+    }
+  }
+
+  // 自殺手チェック
+  const self = getGroup(x, y);
+  if (self.liberties.size === 0) {
+    brd[y][x] = EMPTY;
+    if (isStar) starStones.delete(`${x},${y}`);
+    for (const [sx, sy] of captured) brd[sy][sx] = opp;
+    return { ok: false };
+  }
+
+  // コウ判定
+  let newKo = null;
+  if (captured.length === 1 && self.stones.length === 1) {
+    newKo = { x: captured[0][0], y: captured[0][1] };
+  }
+
+  return { ok: true, captured, newKo };
+}
+
+// 合法手チェック（盤を変更しない）
+function isLegal(brd, x, y, color, koP) {
+  if (brd[y][x] !== EMPTY) return false;
+  if (koP && koP.x === x && koP.y === y) return false;
+
+  const tmp       = brd.map(r => [...r]);
+  const savedStar = new Set(starStones);
+  const result    = placeStone(tmp, x, y, color, false, null);
+  starStones.clear();
+  savedStar.forEach(s => starStones.add(s));
+  return result.ok;
+}
+
+function getLegalMoves(brd, color, koP) {
+  const moves = [];
+  for (let y = 0; y < SIZE; y++)
+    for (let x = 0; x < SIZE; x++)
+      if (isLegal(brd, x, y, color, koP)) moves.push([x, y]);
+  return moves;
+}
+
+function countEmpty() {
+  let n = 0;
+  for (let y = 0; y < SIZE; y++)
+    for (let x = 0; x < SIZE; x++)
+      if (board[y][x] === EMPTY) n++;
+  return n;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  星石 失効チェック
+// ═══════════════════════════════════════════════════════════
+function canUseStarStone(playerColor) {
+  if (starUsed[playerColor]) return false;
+  switch (expireMode) {
+    case 0: return true;
+    case 1: return countEmpty() > 25;
+    case 2: return !firstPassDone;
+    default: return true;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  表示更新ヘルパー
+// ═══════════════════════════════════════════════════════════
+const COLS = 'ABCDEFGHJ';
+function coordStr(x, y) { return COLS[x] + (SIZE - y); }
+
+function setStatus(msg) {
+  document.getElementById('status-bar').innerHTML = msg;
+}
+
+function currentPlayerLabel() {
+  return current === BLACK ? '<span>黒</span>の手番' : '<span>白</span>の手番';
+}
+
+function updateStarPanel() {
+  const panel = document.getElementById('star-panel');
+  const badge = document.getElementById('star-human');
+  const label = document.getElementById('star-human-label');
+
+  if (gameMode !== 'human-cpu') {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+
+  const isMyTurn = !gameOver && current === humanColor;
+  const canUse   = canUseStarStone(humanColor) && isMyTurn;
+
+  badge.className = 'star-badge'
+    + (starUsed[humanColor] ? ' used' : '')
+    + (starPending ? ' active' : '');
+
+  if (starUsed[humanColor]) {
+    label.textContent = `あなたの星石（使用済: ${starMoveNo[humanColor]}手目）`;
+  } else if (starPending) {
+    label.textContent = '★ 星石待機中 — 盤面をクリックして配置';
+  } else if (!isMyTurn) {
+    label.textContent = 'あなたの星石（未使用）';
+  } else if (!canUse) {
+    label.textContent = 'あなたの星石（失効条件により使用不可）';
+  } else {
+    label.textContent = 'あなたの星石（未使用）← タップで使用';
+  }
+}
+
+function updateStats() {
+  document.getElementById('st-moves').textContent = totalMoves;
+  document.getElementById('st-pass').textContent  = passCnt;
+  document.getElementById('st-star-b').textContent =
+    starMoveNo[BLACK] !== null ? `${starMoveNo[BLACK]}手目` : '—';
+  document.getElementById('st-star-w').textContent =
+    starMoveNo[WHITE] !== null ? `${starMoveNo[WHITE]}手目` : '—';
+}
+
+function renderLog() {
+  const el = document.getElementById('move-log');
+  el.innerHTML = moveLog.map(e => {
+    const pName = e.player === BLACK ? '黒' : '白';
+    let cls = '', text = '';
+
+    if (e.type === 'pass') {
+      cls  = 'pass-move';
+      text = `${e.moveNo}. ${pName} — パス`;
+    } else if (e.type === 'resign') {
+      text = `${e.moveNo}. ${pName} — 投了`;
+    } else {
+      const coord = coordStr(e.x, e.y);
+      if (e.isStar) {
+        cls  = 'star-move';
+        const sc = e.starColor === BLACK ? '黒★' : '白★';
+        text = `${e.moveNo}. ${pName} — ${coord} [星石:${sc}]`;
+      } else {
+        text = `${e.moveNo}. ${pName} — ${coord}`;
+      }
+      if (e.captured && e.captured.length > 0)
+        text += ` (取:${e.captured.length})`;
+    }
+    return `<div class="${cls}">${text}</div>`;
+  }).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function addLog(entry) {
+  moveLog.push(entry);
+  renderLog();
+  updateStats();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  着手処理（人間・CPU 共用）
+// ═══════════════════════════════════════════════════════════
+function doMove(x, y, isStar, starColor) {
+  const stoneColor   = isStar ? starColor : current;
+  const savedBoard   = board.map(r => [...r]);
+  const savedStars   = new Set(starStones);
+
+  const result = placeStone(board, x, y, stoneColor, isStar, koPoint);
+
+  if (!result.ok) {
+    // 失敗: 巻き戻し
+    board.length = 0;
+    savedBoard.forEach(r => board.push(r));
+    starStones.clear();
+    savedStars.forEach(s => starStones.add(s));
+    setStatus(`⛔ 不正手（自殺手またはコウ）。${currentPlayerLabel()}`);
+    return false;
+  }
+
+  koPoint    = result.newKo || null;
+  totalMoves++;
+  consecutivePasses = 0;
+
+  if (isStar) {
+    starUsed[current]   = true;
+    starMoveNo[current] = totalMoves;
+  }
+
+  addLog({
+    moveNo: totalMoves, player: current, type: 'place',
+    x, y, isStar, starColor: isStar ? starColor : null,
+    captured: result.captured
+  });
+
+  current          = 1 - current;
+  starPending      = false;
+  pendingStarColor = null;
+
+  drawBoard();
+  updateStarPanel();
+  setStatus(currentPlayerLabel());
+  return true;
+}
+
+function doPass() {
+  if (gameOver) return;
+  totalMoves++;
+  passCnt++;
+  consecutivePasses++;
+  firstPassDone    = true;
+  starPending      = false;
+  pendingStarColor = null;
+  koPoint          = null; // パス後コウ解除
+
+  addLog({ moveNo: totalMoves, player: current, type: 'pass' });
+
+  if (consecutivePasses >= 2) {
+    endGame('両者パス');
+    return;
+  }
+
+  current = 1 - current;
+  drawBoard();
+  updateStarPanel();
+  setStatus(currentPlayerLabel());
+}
+
+function doResign() {
+  if (gameOver) return;
+  const winner = current === BLACK ? '白' : '黒';
+  addLog({ moveNo: totalMoves + 1, player: current, type: 'resign' });
+  endGame(`${winner} 勝ち（投了）`);
+}
+
+function endGame(reason) {
+  gameOver = true;
+  if (cpuTimer) { clearInterval(cpuTimer); cpuTimer = null; }
+  setStatus(`🏁 ゲーム終了 — ${reason}`);
+  updateStarPanel();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CPU ロジック（ランダム）
+// ═══════════════════════════════════════════════════════════
+function cpuTurn() {
+  if (gameOver) return;
+
+  const legal   = getLegalMoves(board, current, koPoint);
+  const canStar = canUseStarStone(current);
+  const useStar = canStar && Math.random() < CPU_STAR_PROB;
+
+  if (useStar && legal.length > 0) {
+    const [x, y]  = legal[Math.floor(Math.random() * legal.length)];
+    const starColor = Math.random() < 0.5 ? BLACK : WHITE;
+    doMove(x, y, true, starColor);
+    return;
+  }
+
+  if (legal.length === 0 || Math.random() < 0.05) {
+    doPass();
+    return;
+  }
+
+  const [x, y] = legal[Math.floor(Math.random() * legal.length)];
+  doMove(x, y, false, null);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ゲーム開始 / リセット
+// ═══════════════════════════════════════════════════════════
+function startGame() {
+  if (cpuTimer) { clearInterval(cpuTimer); cpuTimer = null; }
+
+  gameMode   = document.getElementById('sel-mode').value;
+  humanColor = parseInt(document.getElementById('sel-color').value);
+  expireMode = parseInt(document.querySelector('input[name=expire]:checked').value);
+
+  initBoard();
+  current           = BLACK;
+  koPoint           = null;
+  gameOver          = false;
+  starUsed          = [false, false];
+  starMoveNo        = [null, null];
+  starPending       = false;
+  pendingStarColor  = null;
+  totalMoves        = 0;
+  passCnt           = 0;
+  consecutivePasses = 0;
+  firstPassDone     = false;
+  moveLog           = [];
+
+  hidePicker();
+  drawBoard();
+  updateStarPanel();
+  renderLog();
+  updateStats();
+  setStatus(currentPlayerLabel());
+
+  if (gameMode === 'cpu-cpu') {
+    cpuTimer = setInterval(() => {
+      if (gameOver) { clearInterval(cpuTimer); cpuTimer = null; return; }
+      cpuTurn();
+    }, 500);
+  } else if (humanColor === WHITE) {
+    setTimeout(cpuTurn, 300);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Canvas イベント（クリック / タッチ）
+// ═══════════════════════════════════════════════════════════
+
+// スクリーン座標 → 盤座標に変換
+function screenToBoard(clientX, clientY) {
+  const rect   = canvas.getBoundingClientRect();
+  const scaleX = CANVAS_PX / rect.width;
+  const scaleY = CANVAS_PX / rect.height;
+  const cx = (clientX - rect.left) * scaleX;
+  const cy = (clientY - rect.top)  * scaleY;
+  const x  = Math.round((cx - MARGIN) / CELL);
+  const y  = Math.round((cy - MARGIN) / CELL);
+  return { x, y };
+}
+
+function handleBoardTap(clientX, clientY) {
+  if (gameMode !== 'human-cpu') return;
+  if (gameOver) return;
+  if (current !== humanColor) return;
+
+  const { x, y } = screenToBoard(clientX, clientY);
+  if (!inBounds(x, y)) return;
+
+  if (starPending) {
+    const ok = doMove(x, y, true, pendingStarColor);
+    if (ok) setTimeout(cpuTurn, 400);
+  } else {
+    const ok = doMove(x, y, false, null);
+    if (ok) setTimeout(cpuTurn, 400);
+  }
+}
+
+canvas.addEventListener('click', e => {
+  handleBoardTap(e.clientX, e.clientY);
+});
+
+// タッチ操作（スマホ）
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  const t = e.changedTouches[0];
+  handleBoardTap(t.clientX, t.clientY);
+}, { passive: false });
+
+// ホバープレビュー（デスクトップのみ）
+canvas.addEventListener('mousemove', e => {
+  if (gameMode !== 'human-cpu' || gameOver || current !== humanColor) return;
+  const { x, y } = screenToBoard(e.clientX, e.clientY);
+  drawBoard();
+  if (inBounds(x, y) && board[y][x] === EMPTY) {
+    const px = MARGIN + x * CELL;
+    const py = MARGIN + y * CELL;
+    ctx.beginPath();
+    ctx.arc(px, py, CELL * 0.44, 0, Math.PI * 2);
+    ctx.fillStyle = current === BLACK ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.5)';
+    ctx.fill();
+  }
+});
+canvas.addEventListener('mouseleave', drawBoard);
+
+// ═══════════════════════════════════════════════════════════
+//  星石ボタン（人間用）
+// ═══════════════════════════════════════════════════════════
+function showPicker() {
+  document.getElementById('overlay').classList.add('visible');
+  document.getElementById('star-picker').classList.add('visible');
+}
+function hidePicker() {
+  document.getElementById('overlay').classList.remove('visible');
+  document.getElementById('star-picker').classList.remove('visible');
+}
+
+document.getElementById('star-human').addEventListener('click', () => {
+  if (gameMode !== 'human-cpu') return;
+  if (gameOver || current !== humanColor) return;
+  if (!canUseStarStone(humanColor)) {
+    setStatus('⛔ 星石は現在使用できません（失効条件）。');
+    return;
+  }
+  showPicker();
+});
+
+document.getElementById('star-pick-black').addEventListener('click', () => {
+  hidePicker();
+  starPending      = true;
+  pendingStarColor = BLACK;
+  updateStarPanel();
+  setStatus('★ 星石（黒）: 盤面をタップして配置してください。');
+});
+
+document.getElementById('star-pick-white').addEventListener('click', () => {
+  hidePicker();
+  starPending      = true;
+  pendingStarColor = WHITE;
+  updateStarPanel();
+  setStatus('★ 星石（白）: 盤面をタップして配置してください。');
+});
+
+document.getElementById('star-pick-cancel').addEventListener('click', () => {
+  hidePicker();
+  starPending      = false;
+  pendingStarColor = null;
+  updateStarPanel();
+});
+
+document.getElementById('overlay').addEventListener('click', () => {
+  hidePicker();
+  starPending      = false;
+  pendingStarColor = null;
+  updateStarPanel();
+});
+
+// ═══════════════════════════════════════════════════════════
+//  主要ボタン
+// ═══════════════════════════════════════════════════════════
+document.getElementById('btn-pass').addEventListener('click', () => {
+  if (gameMode !== 'human-cpu' || gameOver || current !== humanColor) return;
+  doPass();
+  if (!gameOver) setTimeout(cpuTurn, 400);
+});
+
+document.getElementById('btn-resign').addEventListener('click', () => {
+  if (gameMode !== 'human-cpu' || gameOver || current !== humanColor) return;
+  doResign();
+});
+
+document.getElementById('btn-reset').addEventListener('click', startGame);
+document.getElementById('btn-start').addEventListener('click', startGame);
+
+// ═══════════════════════════════════════════════════════════
+//  詳細セクション 開閉
+// ═══════════════════════════════════════════════════════════
+document.getElementById('btn-detail-toggle').addEventListener('click', () => {
+  const content = document.getElementById('detail-content');
+  const arrow   = document.getElementById('detail-arrow');
+  const isOpen  = content.classList.toggle('open');
+  arrow.classList.toggle('open', isOpen);
+});
+
+// ═══════════════════════════════════════════════════════════
+//  初期化
+// ═══════════════════════════════════════════════════════════
+startGame();
+
+} catch(initErr) {
+  showFatalError(initErr.message || String(initErr));
+}
+}); // DOMContentLoaded
+</script>
+</body>
+</html>
