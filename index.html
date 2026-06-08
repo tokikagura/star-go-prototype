@@ -273,6 +273,33 @@ label { font-size: 0.82rem; cursor: pointer; }
   z-index: 190;
 }
 #overlay.visible { display: block; }
+
+/* ════════════════════════════════
+   SGF プレビュー textarea
+════════════════════════════════ */
+#sgf-preview {
+  display: none;          /* SGF生成後に表示 */
+  width: 100%;
+  min-height: 120px;
+  max-height: 200px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #0d1527;
+  color: #b8ffb8;
+  border: 1px solid #3a5a3a;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  resize: vertical;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  word-break: break-all;
+  white-space: pre-wrap;
+  -webkit-user-select: text;
+  user-select: text;
+}
+#sgf-preview.visible { display: block; }
   </style>
 </head>
 <body>
@@ -376,6 +403,20 @@ label { font-size: 0.82rem; cursor: pointer; }
       <div class="card">
         <h2>棋譜ログ</h2>
         <div id="move-log"></div>
+      </div>
+
+      <!-- SGF出力 -->
+      <div class="card">
+        <h2>SGF出力</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <button class="action" id="btn-sgf-gen">SGFを生成</button>
+          <button class="action" id="btn-sgf-copy">SGFをコピー</button>
+          <button class="action" id="btn-sgf-dl">SGFをダウンロード</button>
+        </div>
+        <div id="sgf-msg" style="font-size:0.78rem;color:#80c080;min-height:1.4em;margin-bottom:4px;"></div>
+        <textarea id="sgf-preview" readonly
+          placeholder="「SGFを生成」を押すとここに表示されます。長押しで全選択→コピーできます。"
+        ></textarea>
       </div>
 
     </div><!-- /detail-content -->
@@ -955,6 +996,227 @@ function updateStats() {
   document.getElementById('st-star-w').textContent =
     starMoveNo[WHITE] !== null ? `${starMoveNo[WHITE]}手目` : '—';
 }
+
+// ═══════════════════════════════════════════════════════════
+//  SGF生成・出力
+// ═══════════════════════════════════════════════════════════
+
+// 内部座標 (x, y) → SGF座標文字列 "aa"〜"ii"
+// 内部: x=0,y=0 = 盤面左上 (A9) = SGF aa
+function toSGFCoord(x, y) {
+  return String.fromCharCode(97 + x) + String.fromCharCode(97 + y);
+}
+
+function buildSGF() {
+  // ── ルートノード ──
+  const expireLabel = ['失効なし', '空点≤25で失効', '初回パス後失効'][expireMode] || '';
+  const modeLabel   = gameMode === 'human-random' ? '人間vsRandom'
+                    : gameMode === 'human-simple' ? '人間vsSimple'
+                    : 'CPU-CPU';
+
+  const rootComment =
+    '星囲碁 / Hoshigo: Starstone Variant. ' +
+    'Free-color starstone variant. ' +
+    'SGF export prioritizes board reproduction. ' +
+    `Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
+
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:0.7]C[${rootComment}]`;
+
+  // ── 手順ノード ──
+  for (const e of moveLog) {
+    const playerName = e.player === BLACK ? '黒' : '白';
+
+    if (e.type === 'pass') {
+      // パス: B[] or W[] （空座標がSGF標準のパス表記）
+      const token = e.player === BLACK ? 'B' : 'W';
+      sgf += `;${token}[]C[${playerName} パス]`;
+
+    } else if (e.type === 'resign') {
+      // 投了はSGF標準のノードなし。コメントのみ末尾に付記
+      // ルートに結果を追記したいが、既存ノードは変更済みなので
+      // 最終ノードとして空パスで記録する
+      const token = e.player === BLACK ? 'B' : 'W';
+      sgf += `;${token}[]C[${playerName} 投了]`;
+
+    } else {
+      // 通常着手 / 星石着手
+      // 盤面再現を優先: 置かれた石色でB/Wを決める
+      const stoneColor = e.isStar ? e.starColor : e.player;
+      const token      = stoneColor === BLACK ? 'B' : 'W';
+      const coord      = toSGFCoord(e.x, e.y);
+
+      if (e.isStar) {
+        // 星石: 手番と石色のズレをコメントに記録
+        const actualTurn  = playerName;
+        const placedColor = e.starColor === BLACK ? '黒' : '白';
+        const comment     = `星石使用: 実際の手番=${actualTurn} / 置いた石色=${placedColor}`;
+        sgf += `;${token}[${coord}]C[${comment}]`;
+      } else {
+        // 通常手: コメントなし
+        sgf += `;${token}[${coord}]`;
+      }
+    }
+  }
+
+  sgf += ')';
+  return sgf;
+}
+
+function setSGFMsg(msg, isError) {
+  const el = document.getElementById('sgf-msg');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = isError ? '#f66' : '#80c080';
+}
+
+// textarea にSGF本文を流し込み表示する
+function showSGFPreview(sgf) {
+  const ta = document.getElementById('sgf-preview');
+  if (!ta) return;
+  ta.value = sgf;
+  ta.classList.add('visible');
+}
+
+// iOS Safari かどうかの判定
+function isIOSSafari() {
+  return /iP(hone|od|ad)/.test(navigator.userAgent) &&
+         /WebKit/.test(navigator.userAgent) &&
+         !/CriOS|FxiOS|OPiOS/.test(navigator.userAgent);
+}
+
+// ── 「SGFを生成」ボタン ──
+// テキストエリアにSGFを表示するだけ。コピーもDLもしない。
+document.getElementById('btn-sgf-gen').addEventListener('click', () => {
+  if (moveLog.length === 0) {
+    setSGFMsg('棋譜がありません。対局を開始してください。', true);
+    return;
+  }
+  const sgf = buildSGF();
+  showSGFPreview(sgf);
+  setSGFMsg('SGFを生成しました。下のテキストを長押しで全選択→コピーできます。', false);
+});
+
+// ── 「SGFをコピー」ボタン ──
+document.getElementById('btn-sgf-copy').addEventListener('click', () => {
+  if (moveLog.length === 0) {
+    setSGFMsg('棋譜がありません。対局を開始してください。', true);
+    return;
+  }
+  const sgf = buildSGF();
+  showSGFPreview(sgf);   // 先にtextareaに流し込む（コピー失敗時の手動コピー用）
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(sgf)
+      .then(() => setSGFMsg('✅ SGFをクリップボードにコピーしました。', false))
+      .catch(() => fallbackCopy(sgf));
+  } else {
+    fallbackCopy(sgf);
+  }
+});
+
+// execCommand フォールバック（iOS含む古い環境向け）
+function fallbackCopy(text) {
+  // textareaが既に表示されていればそこから選択を試みる
+  const preview = document.getElementById('sgf-preview');
+  if (preview && preview.classList.contains('visible')) {
+    try {
+      preview.focus();
+      preview.setSelectionRange(0, preview.value.length);
+      const ok = document.execCommand('copy');
+      if (ok) {
+        setSGFMsg('✅ SGFをコピーしました。', false);
+        return;
+      }
+    } catch(e) { /* fall through */ }
+  }
+  // 画面内に不可視textareaを作って試みる
+  try {
+    const ta = document.createElement('textarea');
+    ta.value     = text;
+    ta.readOnly  = true;
+    ta.style.cssText =
+      'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;' +
+      'border:none;outline:none;-webkit-user-select:text;user-select:text;';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.setSelectionRange(0, ta.value.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) {
+      setSGFMsg('✅ SGFをコピーしました。', false);
+    } else {
+      setSGFMsg('コピーに失敗しました。下のSGF本文を長押しでコピーしてください。', true);
+    }
+  } catch(e) {
+    setSGFMsg('コピーに失敗しました。下のSGF本文を長押しでコピーしてください。', true);
+  }
+}
+
+// ── 「SGFをダウンロード」ボタン ──
+document.getElementById('btn-sgf-dl').addEventListener('click', () => {
+  if (moveLog.length === 0) {
+    setSGFMsg('棋譜がありません。対局を開始してください。', true);
+    return;
+  }
+  const sgf = buildSGF();
+  showSGFPreview(sgf);   // 先にtextareaを表示（DL失敗時の手動コピー用）
+
+  const now = new Date();
+  const ts  = now.getFullYear()
+    + ('0' + (now.getMonth()+1)).slice(-2)
+    + ('0' + now.getDate()).slice(-2)
+    + '-'
+    + ('0' + now.getHours()).slice(-2)
+    + ('0' + now.getMinutes()).slice(-2);
+  const filename = `hoshigo_${ts}.sgf`;
+
+  // iOS Safari は <a download> を無視するため、別アプローチを先に試みる
+  if (isIOSSafari()) {
+    // iOS: data: URI を新しいタブで開く（「ファイルに保存」から保存可能）
+    try {
+      const dataUri = 'data:application/x-go-sgf;charset=utf-8,' + encodeURIComponent(sgf);
+      window.open(dataUri, '_blank');
+      setSGFMsg(
+        'SGFを生成しました。新しいタブが開いたら「共有」→「ファイルに保存」で保存できます。' +
+        '保存できない場合は下のSGF本文を長押しでコピーしてください。',
+        false
+      );
+    } catch(e) {
+      setSGFMsg(
+        '新しいタブを開けませんでした。下のSGF本文を長押しでコピーしてください。',
+        true
+      );
+    }
+    return;
+  }
+
+  // 非iOS: Blob + a.download
+  try {
+    const blob = new Blob([sgf], { type: 'application/x-go-sgf' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // revokeObjectURL は即時呼び出しを避け、ダウンロード開始を待つ
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    setSGFMsg(
+      `SGFを生成しました（${filename}）。保存できない場合は下のSGF本文をコピーしてください。`,
+      false
+    );
+  } catch(e) {
+    setSGFMsg(
+      'ダウンロードに失敗しました。下のSGF本文を長押しでコピーしてください。',
+      true
+    );
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+//  棋譜ログ表示
+// ═══════════════════════════════════════════════════════════
 
 function renderLog() {
   const el = document.getElementById('move-log');
