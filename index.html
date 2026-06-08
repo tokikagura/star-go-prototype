@@ -73,7 +73,7 @@ body {
   cursor: crosshair;
   border: 2px solid #555;
   border-radius: 4px;
-  touch-action: none; /* スクロール防止 */
+  touch-action: none;
 }
 
 /* ════════════════════════════════
@@ -139,7 +139,6 @@ button.action.danger  { background: #5a1a1a; border-color: #aa4444; color: #fff;
   width: 100%;
 }
 
-/* 詳細トグルボタン */
 #btn-detail-toggle {
   width: 100%;
   padding: 9px;
@@ -160,7 +159,6 @@ button.action.danger  { background: #5a1a1a; border-color: #aa4444; color: #fff;
 #detail-arrow { transition: transform 0.25s; display: inline-block; }
 #detail-arrow.open { transform: rotate(180deg); }
 
-/* 詳細コンテンツ */
 #detail-content {
   display: none;
   flex-direction: column;
@@ -208,7 +206,7 @@ button.action.danger  { background: #5a1a1a; border-color: #aa4444; color: #fff;
 #move-log .pass-move { color: #80c080; }
 
 /* ────── 設定 ────── */
-select { 
+select {
   background: #2a2a4a;
   color: #e0e0e0;
   border: 1px solid #555;
@@ -321,8 +319,17 @@ label { font-size: 0.82rem; cursor: pointer; }
         <div class="setting-row">
           <label>モード:</label>
           <select id="sel-mode">
-            <option value="human-cpu">人間 vs ランダムCPU</option>
+            <option value="human-random">人間 vs CPU [Random]</option>
+            <option value="human-simple">人間 vs CPU [Simple]</option>
             <option value="cpu-cpu">CPU vs CPU 自動対局</option>
+          </select>
+        </div>
+        <!-- CPU vs CPU 難易度選択（cpu-cpu 時のみ有効） -->
+        <div class="setting-row" id="row-cpu-level">
+          <label>CPU難易度:</label>
+          <select id="sel-cpu-level">
+            <option value="random">Random</option>
+            <option value="simple">Simple</option>
           </select>
         </div>
         <div class="setting-row">
@@ -402,7 +409,6 @@ function showFatalError(msg) {
   document.body.insertBefore(errDiv, document.body.firstChild);
 }
 
-// グローバルエラーもキャッチ
 window.onerror = function(message, source, lineno, colno, error) {
   showFatalError(message + ' (line ' + lineno + ')');
   return false;
@@ -417,14 +423,25 @@ try {
 // ═══════════════════════════════════════════════════════════
 //  定数
 // ═══════════════════════════════════════════════════════════
-const SIZE   = 9;
-const CELL   = 52;        // 内部解像度のマス幅 (px)
-const MARGIN = 36;        // 内部解像度の余白
-const CANVAS_PX = CELL * (SIZE - 1) + MARGIN * 2; // 内部解像度
+const SIZE      = 9;
+const CELL      = 52;
+const MARGIN    = 36;
+const CANVAS_PX = CELL * (SIZE - 1) + MARGIN * 2;
 
 const BLACK = 0;
 const WHITE = 1;
 const EMPTY = -1;
+
+// ─── スコア定数（Simple CPU） ───
+const SCORE_CAPTURE      = 100;  // 相手石を取れる
+const SCORE_ESCAPE_ATARI =  80;  // 自分のアタリを救う
+const SCORE_NEAR_STONE   =  10;  // 隣接に石がある
+const SCORE_NEAR_STONE2  =   5;  // 2手先に石がある
+const SCORE_EDGE_PENALTY = -20;  // 1線（端）
+const SCORE_JITTER       =  15;  // ランダム揺らぎの最大値
+const SIMPLE_STAR_MIN_MOVE = 10; // 星石を使い始める最低手数
+const SCORE_STAR_NEAR_OPP  = 30; // 星石: 相手石の隣
+const SCORE_STAR_NEAR_ATARI= 30; // 星石: 自分のアタリ連の隣
 
 // ═══════════════════════════════════════════════════════════
 //  Canvas セットアップ
@@ -441,13 +458,13 @@ canvas.height = CANVAS_PX;
 // ═══════════════════════════════════════════════════════════
 let board    = [];
 let current  = BLACK;
-let koPoint  = null;   // {x, y} | null
+let koPoint  = null;
 let gameOver = false;
 
-let starStones = new Set(); // "x,y" → 星石位置
+let starStones = new Set();
 let starUsed   = [false, false];
 let starMoveNo = [null, null];
-let starPending      = false;  // 人間が星石モードで配置待ち
+let starPending      = false;
 let pendingStarColor = null;
 
 let totalMoves        = 0;
@@ -456,48 +473,38 @@ let consecutivePasses = 0;
 let firstPassDone     = false;
 let moveLog           = [];
 
-let gameMode   = 'human-cpu';
+// モード: 'human-random' | 'human-simple' | 'cpu-cpu'
+let gameMode   = 'human-random';
+let cpuLevel   = 'random';  // cpu-cpu 時の難易度: 'random' | 'simple'
 let humanColor = BLACK;
 let expireMode = 0;
 
 let cpuTimer = null;
 
-const CPU_STAR_PROB = 0.15;
-
 // ═══════════════════════════════════════════════════════════
 //  盤面描画
 // ═══════════════════════════════════════════════════════════
 function drawBoard() {
-  // 背景（木目色）
   ctx.fillStyle = '#c8a96e';
   ctx.fillRect(0, 0, CANVAS_PX, CANVAS_PX);
 
-  // グリッド線
   ctx.strokeStyle = '#5a3e1b';
   ctx.lineWidth = 1;
   for (let i = 0; i < SIZE; i++) {
     const p = MARGIN + i * CELL;
-    ctx.beginPath();
-    ctx.moveTo(p, MARGIN);
-    ctx.lineTo(p, MARGIN + (SIZE - 1) * CELL);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(MARGIN, p);
-    ctx.lineTo(MARGIN + (SIZE - 1) * CELL, p);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(p, MARGIN); ctx.lineTo(p, MARGIN + (SIZE-1)*CELL); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(MARGIN, p); ctx.lineTo(MARGIN + (SIZE-1)*CELL, p); ctx.stroke();
   }
 
-  // 星 (hoshi) 点
   ctx.fillStyle = '#5a3e1b';
   for (const hi of [2, 4, 6]) {
     for (const hj of [2, 4, 6]) {
       ctx.beginPath();
-      ctx.arc(MARGIN + hj * CELL, MARGIN + hi * CELL, 3, 0, Math.PI * 2);
+      ctx.arc(MARGIN + hj*CELL, MARGIN + hi*CELL, 3, 0, Math.PI*2);
       ctx.fill();
     }
   }
 
-  // 座標ラベル
   ctx.fillStyle = '#5a3e1b';
   ctx.font = '11px Courier New';
   const COLS_LABEL = 'ABCDEFGHJ';
@@ -505,21 +512,17 @@ function drawBoard() {
     const p = MARGIN + i * CELL;
     ctx.textAlign = 'center';
     ctx.fillText(COLS_LABEL[i], p, MARGIN - 18);
-    ctx.fillText(COLS_LABEL[i], p, MARGIN + (SIZE - 1) * CELL + 26);
+    ctx.fillText(COLS_LABEL[i], p, MARGIN + (SIZE-1)*CELL + 26);
     ctx.textAlign = 'right';
-    ctx.fillText(String(SIZE - i), MARGIN - 14, MARGIN + i * CELL + 4);
+    ctx.fillText(String(SIZE - i), MARGIN - 14, MARGIN + i*CELL + 4);
     ctx.textAlign = 'left';
-    ctx.fillText(String(SIZE - i), MARGIN + (SIZE - 1) * CELL + 12, MARGIN + i * CELL + 4);
+    ctx.fillText(String(SIZE - i), MARGIN + (SIZE-1)*CELL + 12, MARGIN + i*CELL + 4);
   }
 
-  // 石を描画
-  for (let y = 0; y < SIZE; y++) {
-    for (let x = 0; x < SIZE; x++) {
+  for (let y = 0; y < SIZE; y++)
+    for (let x = 0; x < SIZE; x++)
       if (board[y][x] !== EMPTY) drawStone(x, y, board[y][x]);
-    }
-  }
 
-  // コウ禁止点マーカー
   if (koPoint) {
     const kx = MARGIN + koPoint.x * CELL;
     const ky = MARGIN + koPoint.y * CELL;
@@ -535,7 +538,6 @@ function drawStone(x, y, color) {
   const r  = CELL * 0.44;
   const isStar = starStones.has(`${x},${y}`);
 
-  // グラデーション
   const grad = ctx.createRadialGradient(cx - r*0.3, cy - r*0.3, r*0.05, cx, cy, r);
   if (color === BLACK) {
     grad.addColorStop(0, '#555'); grad.addColorStop(1, '#111');
@@ -544,18 +546,17 @@ function drawStone(x, y, color) {
   }
 
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r, 0, Math.PI*2);
   ctx.fillStyle = grad;
   ctx.fill();
 
   if (isStar) {
-    // 金色輪郭 + ★
     ctx.strokeStyle = '#ffd700';
     ctx.lineWidth = 2.5;
     ctx.stroke();
-    ctx.fillStyle   = color === BLACK ? '#ffd700' : '#b8860b';
-    ctx.font        = `bold ${Math.round(r * 0.9)}px serif`;
-    ctx.textAlign   = 'center';
+    ctx.fillStyle    = color === BLACK ? '#ffd700' : '#b8860b';
+    ctx.font         = `bold ${Math.round(r * 0.9)}px serif`;
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('★', cx, cy + 1);
     ctx.textBaseline = 'alphabetic';
@@ -567,22 +568,19 @@ function drawStone(x, y, color) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  囲碁ロジック
+//  囲碁ロジック（v0.5 から変更なし）
 // ═══════════════════════════════════════════════════════════
 function initBoard() {
   board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
   starStones.clear();
 }
 
-function inBounds(x, y) {
-  return x >= 0 && x < SIZE && y >= 0 && y < SIZE;
-}
+function inBounds(x, y) { return x >= 0 && x < SIZE && y >= 0 && y < SIZE; }
 
 function neighbors(x, y) {
   return [[x-1,y],[x+1,y],[x,y-1],[x,y+1]].filter(([nx,ny]) => inBounds(nx,ny));
 }
 
-// 連と呼吸点を取得
 function getGroup(x, y) {
   const color     = board[y][x];
   const stones    = [];
@@ -607,7 +605,6 @@ function getGroup(x, y) {
   return { stones, liberties };
 }
 
-// 石を置く（盤を直接変更）。返り値: { ok, captured, newKo }
 function placeStone(brd, x, y, color, isStar, koP) {
   if (brd[y][x] !== EMPTY) return { ok: false };
   if (koP && koP.x === x && koP.y === y) return { ok: false };
@@ -631,7 +628,6 @@ function placeStone(brd, x, y, color, isStar, koP) {
     }
   }
 
-  // 自殺手チェック
   const self = getGroup(x, y);
   if (self.liberties.size === 0) {
     brd[y][x] = EMPTY;
@@ -640,20 +636,16 @@ function placeStone(brd, x, y, color, isStar, koP) {
     return { ok: false };
   }
 
-  // コウ判定
   let newKo = null;
   if (captured.length === 1 && self.stones.length === 1) {
     newKo = { x: captured[0][0], y: captured[0][1] };
   }
-
   return { ok: true, captured, newKo };
 }
 
-// 合法手チェック（盤を変更しない）
 function isLegal(brd, x, y, color, koP) {
   if (brd[y][x] !== EMPTY) return false;
   if (koP && koP.x === x && koP.y === y) return false;
-
   const tmp       = brd.map(r => [...r]);
   const savedStar = new Set(starStones);
   const result    = placeStone(tmp, x, y, color, false, null);
@@ -692,6 +684,215 @@ function canUseStarStone(playerColor) {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  Simple CPU ヘルパー関数
+// ═══════════════════════════════════════════════════════════
+
+// その手で取れる相手石の数を返す（盤を変更しない）
+function captureCount(x, y, color) {
+  const opp = 1 - color;
+  let count = 0;
+  const tmp       = board.map(r => [...r]);
+  const savedStar = new Set(starStones);
+  tmp[y][x] = color;
+  // starStones は変えなくてよい（呼吸点だけ見る）
+  for (const [nx, ny] of neighbors(x, y)) {
+    if (tmp[ny][nx] === opp) {
+      const g = getGroup(nx, ny); // getGroup は board を参照するので tmp で差し替える
+      // getGroup は直接 board を見ているため、一時的に board を書き換える
+    }
+  }
+  // ──→ board を直接使う版で実装（placeStone のコピーを使う）
+  tmp[y][x] = EMPTY; // 元に戻す
+  starStones.clear();
+  savedStar.forEach(s => starStones.add(s));
+
+  // board をコピーして実際に置いて確認
+  const brd = board.map(r => [...r]);
+  const savedStar2 = new Set(starStones);
+  const result = placeStone(brd, x, y, color, false, koPoint);
+  starStones.clear();
+  savedStar2.forEach(s => starStones.add(s));
+  return result.ok ? result.captured.length : 0;
+}
+
+// 現在 color の石でアタリ（呼吸点=1）になっている連の座標集合を返す
+function getAtariPoints(color) {
+  const atariPoints = new Set(); // "x,y" 形式
+  const visited = new Set();
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if (board[y][x] !== color) continue;
+      const key = `${x},${y}`;
+      if (visited.has(key)) continue;
+      const g = getGroup(x, y);
+      g.stones.forEach(([sx, sy]) => visited.add(`${sx},${sy}`));
+      if (g.liberties.size === 1) {
+        // この連の唯一の呼吸点（逃げ先）を登録
+        g.liberties.forEach(lib => atariPoints.add(lib));
+        // この連の石の隣の空点も逃げ候補として登録
+        for (const [sx, sy] of g.stones) {
+          for (const [nx, ny] of neighbors(sx, sy)) {
+            if (board[ny][nx] === EMPTY) atariPoints.add(`${nx},${ny}`);
+          }
+        }
+      }
+    }
+  }
+  return atariPoints;
+}
+
+// 隣接する盤面の石の有無を確認（自他どちらでも）
+function hasAdjacentStone(x, y) {
+  return neighbors(x, y).some(([nx, ny]) => board[ny][nx] !== EMPTY);
+}
+
+// 2マス以内に石があるか（簡易近接チェック）
+function hasNearbyStone(x, y) {
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const nx = x + dx, ny = y + dy;
+      if (inBounds(nx, ny) && board[ny][nx] !== EMPTY) return true;
+    }
+  }
+  return false;
+}
+
+// 1線（端）かどうか
+function isEdge(x, y) { return x === 0 || x === SIZE - 1 || y === 0 || y === SIZE - 1; }
+
+// ═══════════════════════════════════════════════════════════
+//  Simple CPU メイン
+//  legalMoves: [[x,y], ...] 合法手リスト
+//  color: 打つ色
+//  返り値: { x, y, useStar, starColor } | null（パスを示す）
+// ═══════════════════════════════════════════════════════════
+function simpleAI(legalMoves, color) {
+  if (legalMoves.length === 0) return null;
+
+  const opp         = 1 - color;
+  const atariPoints = getAtariPoints(color);   // 自分のアタリ逃げ先
+  const oppAtari    = getAtariPoints(opp);     // 相手のアタリ（取り逃し防止参考）
+
+  // 各手にスコアを付ける
+  const scored = legalMoves.map(([x, y]) => {
+    let score = 0;
+
+    // 1. 相手石を取れる
+    const cap = captureCount(x, y, color);
+    if (cap > 0) score += SCORE_CAPTURE + cap * 5; // 多く取るほど高評価
+
+    // 2. 自分のアタリを救う
+    if (atariPoints.has(`${x},${y}`)) score += SCORE_ESCAPE_ATARI;
+
+    // 3. 1線ペナルティ
+    if (isEdge(x, y)) score += SCORE_EDGE_PENALTY;
+
+    // 4. 隣接に石がある（既存石の近く優先）
+    if (hasAdjacentStone(x, y)) score += SCORE_NEAR_STONE;
+    else if (hasNearbyStone(x, y)) score += SCORE_NEAR_STONE2;
+
+    // 5. ランダム揺らぎ（同スコアに変化をつける）
+    score += Math.random() * SCORE_JITTER;
+
+    return { x, y, score };
+  });
+
+  // スコア降順にソート
+  scored.sort((a, b) => b.score - a.score);
+
+  // 最高スコアの手を選ぶ（上位3件の中からランダムに選び単調にならないようにする）
+  const topN  = Math.min(3, scored.length);
+  const pick  = scored[Math.floor(Math.random() * topN)];
+
+  // ── 星石の使用判断 ──
+  let useStar      = false;
+  let starColor    = color;
+
+  if (canUseStarStone(color) && totalMoves >= SIMPLE_STAR_MIN_MOVE) {
+    // 使う候補点のスコアを計算
+    let starScore = 0;
+
+    // 相手石の隣に打つなら星石の効果が高い
+    for (const [nx, ny] of neighbors(pick.x, pick.y)) {
+      if (board[ny][nx] === opp) { starScore += SCORE_STAR_NEAR_OPP; break; }
+    }
+
+    // 自分のアタリ連の近くなら星石で補強
+    if (atariPoints.has(`${pick.x},${pick.y}`)) starScore += SCORE_STAR_NEAR_ATARI;
+
+    // スコアが閾値を超えたら星石を使う（一定確率でも使う）
+    const USE_STAR_THRESHOLD = 20;
+    if (starScore >= USE_STAR_THRESHOLD || Math.random() < 0.08) {
+      useStar   = true;
+      // 星石の色: 自分の色にするのが基本。ただし相手色で打つことで敵陣攪乱（20%）
+      starColor = Math.random() < 0.8 ? color : opp;
+    }
+  }
+
+  return { x: pick.x, y: pick.y, useStar, starColor };
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CPU ロジック（Random / Simple を切り替え）
+// ═══════════════════════════════════════════════════════════
+function cpuTurn() {
+  if (gameOver) return;
+
+  // 現在のモードから使用する AI を決定
+  const useSimple =
+    gameMode === 'human-simple' ||
+    (gameMode === 'cpu-cpu' && cpuLevel === 'simple');
+
+  if (useSimple) {
+    cpuTurnSimple();
+  } else {
+    cpuTurnRandom();
+  }
+}
+
+// ── Random CPU（v0.5 から変更なし） ──
+function cpuTurnRandom() {
+  const legal   = getLegalMoves(board, current, koPoint);
+  const canStar = canUseStarStone(current);
+  const useStar = canStar && Math.random() < 0.15;
+
+  if (useStar && legal.length > 0) {
+    const [x, y]    = legal[Math.floor(Math.random() * legal.length)];
+    const starColor = Math.random() < 0.5 ? BLACK : WHITE;
+    doMove(x, y, true, starColor);
+    return;
+  }
+
+  if (legal.length === 0 || Math.random() < 0.05) {
+    doPass();
+    return;
+  }
+
+  const [x, y] = legal[Math.floor(Math.random() * legal.length)];
+  doMove(x, y, false, null);
+}
+
+// ── Simple CPU ──
+function cpuTurnSimple() {
+  const legal = getLegalMoves(board, current, koPoint);
+
+  if (legal.length === 0) {
+    doPass();
+    return;
+  }
+
+  const decision = simpleAI(legal, current);
+
+  if (!decision) {
+    doPass();
+    return;
+  }
+
+  doMove(decision.x, decision.y, decision.useStar, decision.starColor);
+}
+
+// ═══════════════════════════════════════════════════════════
 //  表示更新ヘルパー
 // ═══════════════════════════════════════════════════════════
 const COLS = 'ABCDEFGHJ';
@@ -710,7 +911,9 @@ function updateStarPanel() {
   const badge = document.getElementById('star-human');
   const label = document.getElementById('star-human-label');
 
-  if (gameMode !== 'human-cpu') {
+  // 星石パネルは人間が参加するモードのみ表示
+  const humanPlaying = gameMode === 'human-random' || gameMode === 'human-simple';
+  if (!humanPlaying) {
     panel.style.display = 'none';
     return;
   }
@@ -734,6 +937,14 @@ function updateStarPanel() {
   } else {
     label.textContent = 'あなたの星石（未使用）← タップで使用';
   }
+}
+
+// CPU vs CPU の難易度セレクト表示制御
+function updateModeUI() {
+  const mode = document.getElementById('sel-mode').value;
+  const rowCpuLevel  = document.getElementById('row-cpu-level');
+  const rowHumanColor = document.querySelector('.setting-row:has(#sel-color)');
+  rowCpuLevel.style.display = mode === 'cpu-cpu' ? '' : 'none';
 }
 
 function updateStats() {
@@ -783,14 +994,13 @@ function addLog(entry) {
 //  着手処理（人間・CPU 共用）
 // ═══════════════════════════════════════════════════════════
 function doMove(x, y, isStar, starColor) {
-  const stoneColor   = isStar ? starColor : current;
-  const savedBoard   = board.map(r => [...r]);
-  const savedStars   = new Set(starStones);
+  const stoneColor = isStar ? starColor : current;
+  const savedBoard = board.map(r => [...r]);
+  const savedStars = new Set(starStones);
 
   const result = placeStone(board, x, y, stoneColor, isStar, koPoint);
 
   if (!result.ok) {
-    // 失敗: 巻き戻し
     board.length = 0;
     savedBoard.forEach(r => board.push(r));
     starStones.clear();
@@ -832,7 +1042,7 @@ function doPass() {
   firstPassDone    = true;
   starPending      = false;
   pendingStarColor = null;
-  koPoint          = null; // パス後コウ解除
+  koPoint          = null;
 
   addLog({ moveNo: totalMoves, player: current, type: 'pass' });
 
@@ -862,38 +1072,13 @@ function endGame(reason) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  CPU ロジック（ランダム）
-// ═══════════════════════════════════════════════════════════
-function cpuTurn() {
-  if (gameOver) return;
-
-  const legal   = getLegalMoves(board, current, koPoint);
-  const canStar = canUseStarStone(current);
-  const useStar = canStar && Math.random() < CPU_STAR_PROB;
-
-  if (useStar && legal.length > 0) {
-    const [x, y]  = legal[Math.floor(Math.random() * legal.length)];
-    const starColor = Math.random() < 0.5 ? BLACK : WHITE;
-    doMove(x, y, true, starColor);
-    return;
-  }
-
-  if (legal.length === 0 || Math.random() < 0.05) {
-    doPass();
-    return;
-  }
-
-  const [x, y] = legal[Math.floor(Math.random() * legal.length)];
-  doMove(x, y, false, null);
-}
-
-// ═══════════════════════════════════════════════════════════
 //  ゲーム開始 / リセット
 // ═══════════════════════════════════════════════════════════
 function startGame() {
   if (cpuTimer) { clearInterval(cpuTimer); cpuTimer = null; }
 
   gameMode   = document.getElementById('sel-mode').value;
+  cpuLevel   = document.getElementById('sel-cpu-level').value;
   humanColor = parseInt(document.getElementById('sel-color').value);
   expireMode = parseInt(document.querySelector('input[name=expire]:checked').value);
 
@@ -924,6 +1109,7 @@ function startGame() {
       cpuTurn();
     }, 500);
   } else if (humanColor === WHITE) {
+    // 人間が白 → CPU(黒)から始める
     setTimeout(cpuTurn, 300);
   }
 }
@@ -931,21 +1117,21 @@ function startGame() {
 // ═══════════════════════════════════════════════════════════
 //  Canvas イベント（クリック / タッチ）
 // ═══════════════════════════════════════════════════════════
-
-// スクリーン座標 → 盤座標に変換
 function screenToBoard(clientX, clientY) {
   const rect   = canvas.getBoundingClientRect();
   const scaleX = CANVAS_PX / rect.width;
   const scaleY = CANVAS_PX / rect.height;
   const cx = (clientX - rect.left) * scaleX;
   const cy = (clientY - rect.top)  * scaleY;
-  const x  = Math.round((cx - MARGIN) / CELL);
-  const y  = Math.round((cy - MARGIN) / CELL);
-  return { x, y };
+  return {
+    x: Math.round((cx - MARGIN) / CELL),
+    y: Math.round((cy - MARGIN) / CELL)
+  };
 }
 
 function handleBoardTap(clientX, clientY) {
-  if (gameMode !== 'human-cpu') return;
+  const humanPlaying = gameMode === 'human-random' || gameMode === 'human-simple';
+  if (!humanPlaying) return;
   if (gameOver) return;
   if (current !== humanColor) return;
 
@@ -961,27 +1147,24 @@ function handleBoardTap(clientX, clientY) {
   }
 }
 
-canvas.addEventListener('click', e => {
-  handleBoardTap(e.clientX, e.clientY);
-});
+canvas.addEventListener('click', e => { handleBoardTap(e.clientX, e.clientY); });
 
-// タッチ操作（スマホ）
 canvas.addEventListener('touchend', e => {
   e.preventDefault();
   const t = e.changedTouches[0];
   handleBoardTap(t.clientX, t.clientY);
 }, { passive: false });
 
-// ホバープレビュー（デスクトップのみ）
 canvas.addEventListener('mousemove', e => {
-  if (gameMode !== 'human-cpu' || gameOver || current !== humanColor) return;
+  const humanPlaying = gameMode === 'human-random' || gameMode === 'human-simple';
+  if (!humanPlaying || gameOver || current !== humanColor) return;
   const { x, y } = screenToBoard(e.clientX, e.clientY);
   drawBoard();
   if (inBounds(x, y) && board[y][x] === EMPTY) {
     const px = MARGIN + x * CELL;
     const py = MARGIN + y * CELL;
     ctx.beginPath();
-    ctx.arc(px, py, CELL * 0.44, 0, Math.PI * 2);
+    ctx.arc(px, py, CELL * 0.44, 0, Math.PI*2);
     ctx.fillStyle = current === BLACK ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.5)';
     ctx.fill();
   }
@@ -1001,7 +1184,8 @@ function hidePicker() {
 }
 
 document.getElementById('star-human').addEventListener('click', () => {
-  if (gameMode !== 'human-cpu') return;
+  const humanPlaying = gameMode === 'human-random' || gameMode === 'human-simple';
+  if (!humanPlaying) return;
   if (gameOver || current !== humanColor) return;
   if (!canUseStarStone(humanColor)) {
     setStatus('⛔ 星石は現在使用できません（失効条件）。');
@@ -1012,31 +1196,27 @@ document.getElementById('star-human').addEventListener('click', () => {
 
 document.getElementById('star-pick-black').addEventListener('click', () => {
   hidePicker();
-  starPending      = true;
-  pendingStarColor = BLACK;
+  starPending = true; pendingStarColor = BLACK;
   updateStarPanel();
   setStatus('★ 星石（黒）: 盤面をタップして配置してください。');
 });
 
 document.getElementById('star-pick-white').addEventListener('click', () => {
   hidePicker();
-  starPending      = true;
-  pendingStarColor = WHITE;
+  starPending = true; pendingStarColor = WHITE;
   updateStarPanel();
   setStatus('★ 星石（白）: 盤面をタップして配置してください。');
 });
 
 document.getElementById('star-pick-cancel').addEventListener('click', () => {
   hidePicker();
-  starPending      = false;
-  pendingStarColor = null;
+  starPending = false; pendingStarColor = null;
   updateStarPanel();
 });
 
 document.getElementById('overlay').addEventListener('click', () => {
   hidePicker();
-  starPending      = false;
-  pendingStarColor = null;
+  starPending = false; pendingStarColor = null;
   updateStarPanel();
 });
 
@@ -1044,18 +1224,23 @@ document.getElementById('overlay').addEventListener('click', () => {
 //  主要ボタン
 // ═══════════════════════════════════════════════════════════
 document.getElementById('btn-pass').addEventListener('click', () => {
-  if (gameMode !== 'human-cpu' || gameOver || current !== humanColor) return;
+  const humanPlaying = gameMode === 'human-random' || gameMode === 'human-simple';
+  if (!humanPlaying || gameOver || current !== humanColor) return;
   doPass();
   if (!gameOver) setTimeout(cpuTurn, 400);
 });
 
 document.getElementById('btn-resign').addEventListener('click', () => {
-  if (gameMode !== 'human-cpu' || gameOver || current !== humanColor) return;
+  const humanPlaying = gameMode === 'human-random' || gameMode === 'human-simple';
+  if (!humanPlaying || gameOver || current !== humanColor) return;
   doResign();
 });
 
 document.getElementById('btn-reset').addEventListener('click', startGame);
 document.getElementById('btn-start').addEventListener('click', startGame);
+
+// ── モード変更時の UI 更新 ──
+document.getElementById('sel-mode').addEventListener('change', updateModeUI);
 
 // ═══════════════════════════════════════════════════════════
 //  詳細セクション 開閉
@@ -1070,6 +1255,7 @@ document.getElementById('btn-detail-toggle').addEventListener('click', () => {
 // ═══════════════════════════════════════════════════════════
 //  初期化
 // ═══════════════════════════════════════════════════════════
+updateModeUI();
 startGame();
 
 } catch(initErr) {
