@@ -353,14 +353,17 @@ label { font-size: 0.82rem; cursor: pointer; }
         <div class="setting-row">
           <label>モード:</label>
           <select id="sel-mode">
-            <option value="human-classic">人間 vs CPU [Classic]</option>
             <option value="human-advanced" selected>人間 vs CPU [Advanced]</option>
+            <option value="human-classic">人間 vs CPU [Classic]</option>
             <option value="cpu-classic-advanced">CPU [Classic] vs CPU [Advanced]</option>
             <option value="cpu-advanced-classic">CPU [Advanced] vs CPU [Classic]</option>
           </select>
         </div>
-        <!-- CPU構成はモード側で選択。旧Randomは廃止。 -->
-        <div class="setting-row" id="row-cpu-level" style="display:none;"></div>
+        <!-- CPU vs CPU はモード名でAIの先後を指定 -->
+        <div class="setting-row" id="row-cpu-level" style="display:none;">
+          <label>CPU設定:</label>
+          <span style="font-size:0.82rem;color:#aaa;">Classic / Advanced</span>
+        </div>
         <div class="setting-row">
           <label>人間の色:</label>
           <select id="sel-color">
@@ -488,10 +491,9 @@ const SCORE_JITTER         =   8;  // ランダム揺らぎの最大値
 const SIMPLE_STAR_MIN_MOVE = 10;   // 星石を使い始める最低手数
 const SCORE_STAR_NEAR_OPP  = 30;   // 星石: 相手石の隣
 const SCORE_STAR_NEAR_ATARI= 30;   // 星石: 自分のアタリ連の隣
-const SIMPLE_AI_CANDIDATES = 14;   // 先読み対象にする候補手数
-const SIMPLE_AI_REPLY_LIMIT = 8;   // 相手応手の候補数
-const SIMPLE_AI_RESCUE_LIMIT = 5;  // 3手目の候補数
-const AI_PASS_SCORE_THRESHOLD = -45; // 候補が壊れている時は自爆せずパス
+const SIMPLE_AI_CANDIDATES = 10;   // 先読み対象にする候補手数（モバイル軽量化）
+const SIMPLE_AI_REPLY_LIMIT = 6;    // 相手応手の候補数（モバイル軽量化）
+const SIMPLE_AI_RESCUE_LIMIT = 4;   // 3手目の候補数（モバイル軽量化）
 
 // ═══════════════════════════════════════════════════════════
 //  Canvas セットアップ
@@ -523,9 +525,9 @@ let consecutivePasses = 0;
 let firstPassDone     = false;
 let moveLog           = [];
 
-// モード: 'human-classic' | 'human-advanced' | 'cpu-classic-advanced' | 'cpu-advanced-classic'
+// モード: 'human-advanced' | 'human-classic' | 'cpu-classic-advanced' | 'cpu-advanced-classic'
 let gameMode   = 'human-advanced';
-let cpuLevel   = 'advanced';  // 互換用。旧UIでは未使用
+let cpuLevel   = 'advanced';
 let humanColor = BLACK;
 let expireMode = 0;
 
@@ -740,11 +742,9 @@ function canUseStarStone(playerColor) {
 //  ・簡易3手読み: 自分 → 相手 → 自分
 // ═══════════════════════════════════════════════════════════
 
-function cloneBoard(brd) {
-  return brd.map(r => [...r]);
-}
+function cloneBoard(brd) { return brd.map(r => [...r]); }
 
-// シミュレーション専用の着手処理。星石集合を触らない。
+// シミュレーション専用。星石集合を触らない純粋着手。
 function placeStonePure(brd, x, y, color, koP) {
   if (brd[y][x] !== EMPTY) return { ok: false };
   if (koP && koP.x === x && koP.y === y) return { ok: false };
@@ -796,7 +796,6 @@ function getLegalMovesPure(brd, color, koP) {
   return moves;
 }
 
-// その手で取れる相手石の数を返す（実盤は変更しない）
 function captureCount(x, y, color) {
   const brd = cloneBoard(board);
   const result = placeStonePure(brd, x, y, color, koPoint);
@@ -826,19 +825,12 @@ function getAtariPointsOn(brd, color) {
   return atariPoints;
 }
 
-// 現在 color の石でアタリ（呼吸点=1）になっている連の座標集合を返す
-function getAtariPoints(color) {
-  return getAtariPointsOn(board, color);
-}
+function getAtariPoints(color) { return getAtariPointsOn(board, color); }
 
 function hasAdjacentStoneOn(brd, x, y) {
   return neighbors(x, y).some(([nx, ny]) => brd[ny][nx] !== EMPTY);
 }
-
-// 隣接する盤面の石の有無を確認（自他どちらでも）
-function hasAdjacentStone(x, y) {
-  return hasAdjacentStoneOn(board, x, y);
-}
+function hasAdjacentStone(x, y) { return hasAdjacentStoneOn(board, x, y); }
 
 function hasNearbyStoneOn(brd, x, y) {
   for (let dy = -2; dy <= 2; dy++) {
@@ -850,17 +842,11 @@ function hasNearbyStoneOn(brd, x, y) {
   }
   return false;
 }
+function hasNearbyStone(x, y) { return hasNearbyStoneOn(board, x, y); }
 
-// 2マス以内に石があるか（簡易近接チェック）
-function hasNearbyStone(x, y) {
-  return hasNearbyStoneOn(board, x, y);
-}
-
-// 1線（端） / 2線 / 中央帯
 function isEdge(x, y) { return x === 0 || x === SIZE - 1 || y === 0 || y === SIZE - 1; }
 function isSecondLine(x, y) { return x === 1 || x === SIZE - 2 || y === 1 || y === SIZE - 2; }
 function isCenterish(x, y) { return x >= 2 && x <= SIZE - 3 && y >= 2 && y <= SIZE - 3; }
-
 function openingPhase(moveNo) { return moveNo < 18; }
 function middlePhase(moveNo) { return moveNo >= 18 && moveNo < 48; }
 
@@ -881,8 +867,7 @@ function countAround(brd, x, y, color, radius) {
   return { own, opp, empty };
 }
 
-// 空点が「自分の地の骨格」になりやすいかを評価。
-// 近くに自石があり、敵石が少なく、少し内側なら高い。
+// 空点が「自分の地の骨格」になりやすいかを評価する。
 function territoryPotential(brd, x, y, color, moveNo) {
   const r1 = countAround(brd, x, y, color, 1);
   const r2 = countAround(brd, x, y, color, 2);
@@ -890,16 +875,13 @@ function territoryPotential(brd, x, y, color, moveNo) {
 
   score += r1.own * 12 - r1.opp * 10;
   score += r2.own * 4  - r2.opp * 3;
-
   if (r1.own >= 2 && r1.opp === 0) score += SCORE_TERRITORY_BASE;
   if (r2.own >= 3 && r2.opp <= 1) score += 12;
   if (r1.own === 0 && r2.own === 0 && moveNo > 10) score -= 10;
 
-  // 9路では完全な中央一辺倒にすると弱いので、中央〜やや内側をほどよく好む。
   if (isCenterish(x, y)) score += SCORE_CENTER_BONUS;
   if (x >= 3 && x <= 5 && y >= 3 && y <= 5) score += 6;
 
-  // 序盤の1線・2線は地を作りにくい。終盤はヨセとして少し許す。
   if (openingPhase(moveNo)) {
     if (isEdge(x, y)) score += SCORE_EDGE_PENALTY * 2;
     else if (isSecondLine(x, y)) score += SCORE_SECOND_LINE_OPENING_PENALTY;
@@ -908,7 +890,6 @@ function territoryPotential(brd, x, y, color, moveNo) {
   } else {
     if (isEdge(x, y)) score -= 5;
   }
-
   return score;
 }
 
@@ -932,12 +913,29 @@ function groupLibertyScore(brd, color) {
   return score;
 }
 
-// 盤面全体のざっくり評価。
-// 石数だけではなく、空点の支配・連の安全度・地の芽を見ている。
+function starThreatPenalty(brd, color, oppHasStar) {
+  if (!oppHasStar) return 0;
+  let penalty = 0;
+  const visited = new Set();
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if (brd[y][x] !== color) continue;
+      const key = `${x},${y}`;
+      if (visited.has(key)) continue;
+      const g = getGroup(brd, x, y);
+      g.stones.forEach(([sx, sy]) => visited.add(`${sx},${sy}`));
+      const libs = g.liberties.size;
+      if (libs === 1) penalty -= 42 + g.stones.length * 10;
+      else if (libs === 2) penalty -= 16 + g.stones.length * 3;
+    }
+  }
+  return penalty;
+}
+
 function evaluateBoard(brd, color) {
+  // 必ず「color側に有利なら高得点」で返す。白番でも評価軸を反転しない。
   const opp = 1 - color;
   let score = 0;
-
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
       const v = brd[y][x];
@@ -953,9 +951,9 @@ function evaluateBoard(brd, color) {
       }
     }
   }
-
   score += groupLibertyScore(brd, color);
   score -= groupLibertyScore(brd, opp) * 0.85;
+  score += starThreatPenalty(brd, color, canUseStarStone(opp));
   return score;
 }
 
@@ -970,28 +968,34 @@ function moveHeuristicOn(brd, x, y, color, koP, moveNo) {
   const selfAfter = getGroup(tmp, x, y);
   let score = 0;
 
-  // 1. 戦術: 取る、逃げる、相手のアタリ石を逃がさない。
   if (result.captured.length > 0) score += SCORE_CAPTURE + result.captured.length * 18;
   if (atariPoints.has(`${x},${y}`)) score += SCORE_ESCAPE_ATARI;
   if (oppAtari.has(`${x},${y}`)) score += 34;
 
-  // 2. 自分の着手後の安全性。
   const libs = selfAfter.liberties.size;
   score += Math.min(libs, 5) * 12;
   if (libs === 1) score -= 115;
   else if (libs === 2) score -= 28;
 
-  // 3. 地の骨格・模様・中央〜やや内側。
   score += territoryPotential(brd, x, y, color, moveNo);
 
-  // 4. 近接補正。孤立しすぎず、くっつきすぎない。
+  const around1 = countAround(brd, x, y, color, 1);
+  const around2 = countAround(brd, x, y, color, 2);
+  if (openingPhase(moveNo)) {
+    // 序盤の団子化を防ぎ、未開拓の足場へ出る。
+    if (around1.own >= 3) score -= 46;
+    if (around1.own >= 2 && around1.opp === 0) score -= 18;
+    if (around2.own === 0 && around2.opp === 0 && isCenterish(x, y)) score += 16;
+    if ((x === 2 || x === 6) && (y === 2 || y === 6)) score += 34;
+  } else {
+    if (around1.own >= 3 && around1.empty <= 3) score -= 28; // 自分の地を埋めすぎない
+  }
+
   if (hasAdjacentStoneOn(brd, x, y)) score += SCORE_NEAR_STONE;
   else if (hasNearbyStoneOn(brd, x, y)) score += SCORE_NEAR_STONE2;
   else if (!openingPhase(moveNo)) score -= 8;
 
-  // 5. 盤面全体評価。置いた後に良い形が残るか。
   score += evaluateBoard(tmp, color) * 0.18;
-
   return score;
 }
 
@@ -1003,8 +1007,6 @@ function topMoves(brd, moves, color, koP, moveNo, limit) {
     .slice(0, limit);
 }
 
-// 自分が打つ → 相手が最も嫌な手を打つ → 自分が受ける、という浅い3手読み。
-// 重要: 相手は「自分にとって一番悪い局面」を選ぶ前提にする。
 function lookaheadScore(x, y, color) {
   const opp = 1 - color;
   const moveNo = totalMoves + 1;
@@ -1013,13 +1015,13 @@ function lookaheadScore(x, y, color) {
   if (!firstResult.ok) return -Infinity;
 
   const firstScore = evaluateBoard(first, color) + moveHeuristicOn(board, x, y, color, koPoint, moveNo);
-
   const oppMoves = getLegalMovesPure(first, opp, firstResult.newKo);
   if (oppMoves.length === 0) return firstScore + 35;
 
   const oppCandidates = topMoves(first, oppMoves, opp, firstResult.newKo, moveNo + 1, SIMPLE_AI_REPLY_LIMIT);
   if (oppCandidates.length === 0) return firstScore;
 
+  // 相手は「こちらの評価を最小化する」手を選ぶ。接待読みは禁止。
   let worstAfterReply = Infinity;
 
   for (const reply of oppCandidates) {
@@ -1027,15 +1029,7 @@ function lookaheadScore(x, y, color) {
     const secondResult = placeStonePure(second, reply.x, reply.y, opp, firstResult.newKo);
     if (!secondResult.ok) continue;
 
-    // 相手の手の後の局面を「自分視点」で評価する。
-    // ここで最小値を取るのがミニマックスの要点。
-    // 相手は自分にとって一番不利な局面を選んでくる。
     let afterReplyScore = evaluateBoard(second, color);
-
-    // 相手視点で強い手ほど、自分には痛い手として追加で減点する。
-    afterReplyScore -= reply.score * 0.32;
-
-    // 3手目: 自分がどれだけ立て直せるかを見る。
     const myReplies = getLegalMovesPure(second, color, secondResult.newKo);
     if (myReplies.length > 0) {
       const myCandidates = topMoves(second, myReplies, color, secondResult.newKo, moveNo + 2, SIMPLE_AI_RESCUE_LIMIT);
@@ -1044,129 +1038,92 @@ function lookaheadScore(x, y, color) {
         const third = cloneBoard(second);
         const thirdResult = placeStonePure(third, rescue.x, rescue.y, color, secondResult.newKo);
         if (!thirdResult.ok) continue;
-        const rescueScore = evaluateBoard(third, color) + rescue.score * 0.42;
+        const rescueScore = evaluateBoard(third, color) + rescue.score * 0.35;
         if (rescueScore > bestRescue) bestRescue = rescueScore;
       }
-      if (bestRescue > -Infinity) {
-        afterReplyScore = afterReplyScore * 0.55 + bestRescue * 0.45;
-      }
+      if (bestRescue > -Infinity) afterReplyScore = afterReplyScore * 0.50 + bestRescue * 0.50;
     }
-
-    // 不等号はこれで正しい。自分視点のスコアが最小になる応手を採用する。
     if (afterReplyScore < worstAfterReply) worstAfterReply = afterReplyScore;
   }
 
   if (worstAfterReply === Infinity) return firstScore;
-  return firstScore * 0.42 + worstAfterReply * 0.58;
+  return firstScore * 0.45 + worstAfterReply * 0.55;
 }
 
-function decideStarUsage(pick, color, moveNo) {
+function chooseStarUse(pick, color, moveNo) {
   const opp = 1 - color;
   let useStar = false;
   let starColor = color;
-
   if (canUseStarStone(color) && totalMoves >= SIMPLE_STAR_MIN_MOVE) {
     let starScore = 0;
-
     for (const [nx, ny] of neighbors(pick.x, pick.y)) {
       if (board[ny][nx] === opp) { starScore += SCORE_STAR_NEAR_OPP; break; }
     }
-
     const atariPoints = getAtariPoints(color);
     if (atariPoints.has(`${pick.x},${pick.y}`)) starScore += SCORE_STAR_NEAR_ATARI;
-
     const terr = territoryPotential(board, pick.x, pick.y, color, moveNo);
-    if (terr >= 30) starScore += 18;
-    if (pick.score >= 160) starScore += 10;
-
-    const USE_STAR_THRESHOLD = 36;
-    if (starScore >= USE_STAR_THRESHOLD || (pick.score >= 190 && Math.random() < 0.12)) {
+    if (terr >= 30) starScore += 14;
+    if (pick.score >= 170) starScore += 10;
+    const USE_STAR_THRESHOLD = 38;
+    if (starScore >= USE_STAR_THRESHOLD || (pick.score >= 205 && Math.random() < 0.10)) {
       useStar = true;
       const around = countAround(board, pick.x, pick.y, color, 1);
-      starColor = around.opp >= 2 && Math.random() < 0.22 ? opp : color;
+      starColor = around.opp >= 2 && Math.random() < 0.18 ? opp : color;
     }
   }
-
   return { useStar, starColor };
 }
 
-// ── Classic CPU: 旧Simple系。軽量で弱め。先読みなし。
 function classicAI(legalMoves, color) {
   if (legalMoves.length === 0) return null;
   const moveNo = totalMoves + 1;
-
-  const scored = legalMoves
-    .map(([x, y]) => ({
-      x,
-      y,
-      score: moveHeuristicOn(board, x, y, color, koPoint, moveNo) + Math.random() * SCORE_JITTER
-    }))
-    .filter(m => Number.isFinite(m.score))
-    .sort((a, b) => b.score - a.score);
-
-  if (scored.length === 0 || scored[0].score < AI_PASS_SCORE_THRESHOLD) return null;
-
-  const topN = Math.min(3, scored.length);
-  const pick = scored[Math.floor(Math.random() * topN)];
-  const star = decideStarUsage(pick, color, moveNo);
+  const candidates = topMoves(board, legalMoves, color, koPoint, moveNo, 8);
+  const pick = candidates[0] || { x: legalMoves[0][0], y: legalMoves[0][1], score: 0 };
+  const star = chooseStarUse(pick, color, moveNo);
   return { x: pick.x, y: pick.y, useStar: star.useStar, starColor: star.starColor };
 }
 
-// ── Advanced CPU: 地評価 + 正しいミニマックス風先読み。強め。
 function advancedAI(legalMoves, color) {
   if (legalMoves.length === 0) return null;
-
   const moveNo = totalMoves + 1;
   const candidates = topMoves(board, legalMoves, color, koPoint, moveNo, SIMPLE_AI_CANDIDATES);
+  const base = candidates.length ? candidates : legalMoves.map(([x, y]) => ({ x, y, score: 0 }));
 
-  if (candidates.length === 0) return null;
-
-  const scored = candidates.map(m => {
+  const scored = base.map(m => {
     const reading = lookaheadScore(m.x, m.y, color);
-    const score = m.score * 0.40 + reading * 0.60 + Math.random() * SCORE_JITTER;
-    return { x: m.x, y: m.y, score, baseScore: m.score, reading };
-  }).filter(m => Number.isFinite(m.score))
-    .sort((a, b) => b.score - a.score);
+    const safeReading = Number.isFinite(reading) ? reading : -999999;
+    const score = m.score * 0.50 + safeReading * 0.50 + Math.random() * SCORE_JITTER;
+    return { x: m.x, y: m.y, score, baseScore: m.score, reading: safeReading };
+  }).filter(m => Number.isFinite(m.score)).sort((a, b) => b.score - a.score);
 
-  if (scored.length === 0 || scored[0].score < AI_PASS_SCORE_THRESHOLD) return null;
-
-  const pick = scored[0];
-  const star = decideStarUsage(pick, color, moveNo);
+  // 合法手がある限り絶対にパスしない。全評価が壊れても先頭合法手を打つ。
+  const pick = scored[0] || { x: legalMoves[0][0], y: legalMoves[0][1], score: 0 };
+  const star = chooseStarUse(pick, color, moveNo);
   return { x: pick.x, y: pick.y, useStar: star.useStar, starColor: star.starColor };
 }
 
-function aiNameForColor(color) {
-  if (gameMode === 'human-classic') return 'classic';
-  if (gameMode === 'human-advanced') return 'advanced';
-  if (gameMode === 'cpu-classic-advanced') return color === BLACK ? 'classic' : 'advanced';
-  if (gameMode === 'cpu-advanced-classic') return color === BLACK ? 'advanced' : 'classic';
-  return 'advanced';
+// 後方互換: 既存の呼び出しが残っていてもAdvancedとして動かす。
+function simpleAI(legalMoves, color) { return advancedAI(legalMoves, color); }
+
+function aiForCurrentColor() {
+  if (gameMode === 'human-classic') return current === humanColor ? 'human' : 'classic';
+  if (gameMode === 'human-advanced') return current === humanColor ? 'human' : 'advanced';
+  if (gameMode === 'cpu-classic-advanced') return current === BLACK ? 'classic' : 'advanced';
+  if (gameMode === 'cpu-advanced-classic') return current === BLACK ? 'advanced' : 'classic';
+  return current === humanColor ? 'human' : 'advanced';
 }
 
-function runAI(legal, color) {
-  return aiNameForColor(color) === 'classic' ? classicAI(legal, color) : advancedAI(legal, color);
-}
-
-// ═══════════════════════════════════════════════════════════
-//  CPU ロジック（Classic / Advanced）
-// ═══════════════════════════════════════════════════════════
 function cpuTurn() {
   if (gameOver) return;
-
   const legal = getLegalMoves(board, current, koPoint);
-  if (legal.length === 0) {
-    doPass();
-    return;
-  }
-
-  const decision = runAI(legal, current);
-  if (!decision) {
-    doPass();
-    return;
-  }
-
+  if (legal.length === 0) { doPass(); return; }
+  const ai = aiForCurrentColor();
+  const decision = ai === 'classic' ? classicAI(legal, current) : advancedAI(legal, current);
+  if (!decision) { doPass(); return; }
   doMove(decision.x, decision.y, decision.useStar, decision.starColor);
 }
+
+function cpuTurnSimple() { cpuTurn(); }
 
 // ═══════════════════════════════════════════════════════════
 //  表示更新ヘルパー
@@ -1188,7 +1145,7 @@ function updateStarPanel() {
   const label = document.getElementById('star-human-label');
 
   // 星石パネルは人間が参加するモードのみ表示
-  const humanPlaying = gameMode === 'human-classic' || gameMode === 'human-advanced';
+  const humanPlaying = gameMode === 'human-advanced' || gameMode === 'human-classic';
   if (!humanPlaying) {
     panel.style.display = 'none';
     return;
@@ -1218,12 +1175,8 @@ function updateStarPanel() {
 // CPU vs CPU の難易度セレクト表示制御
 function updateModeUI() {
   const mode = document.getElementById('sel-mode').value;
-  const rowCpuLevel = document.getElementById('row-cpu-level');
-  if (rowCpuLevel) rowCpuLevel.style.display = 'none';
-  const colorRow = document.getElementById('sel-color').closest('.setting-row');
-  if (colorRow) {
-    colorRow.style.display = (mode === 'human-classic' || mode === 'human-advanced') ? '' : 'none';
-  }
+  const rowCpuLevel  = document.getElementById('row-cpu-level');
+  rowCpuLevel.style.display = 'none';
 }
 
 function updateStats() {
@@ -1248,10 +1201,10 @@ function toSGFCoord(x, y) {
 function buildSGF() {
   // ── ルートノード ──
   const expireLabel = ['失効なし', '空点≤25で失効', '初回パス後失効'][expireMode] || '';
-  const modeLabel   = gameMode === 'human-classic' ? '人間vsClassic'
-                    : gameMode === 'human-advanced' ? '人間vsAdvanced'
-                    : gameMode === 'cpu-classic-advanced' ? 'Classic-vs-Advanced'
-                    : gameMode === 'cpu-advanced-classic' ? 'Advanced-vs-Classic'
+  const modeLabel   = gameMode === 'human-advanced' ? '人間vsAdvanced'
+                    : gameMode === 'human-classic' ? '人間vsClassic'
+                    : gameMode === 'cpu-classic-advanced' ? 'CPU Classic vs Advanced'
+                    : gameMode === 'cpu-advanced-classic' ? 'CPU Advanced vs Classic'
                     : 'Unknown';
 
   const rootComment =
@@ -1610,7 +1563,7 @@ function startGame() {
       if (gameOver) { clearInterval(cpuTimer); cpuTimer = null; return; }
       cpuTurn();
     }, 500);
-  } else if (humanColor === WHITE) {
+  } else if ((gameMode === 'human-advanced' || gameMode === 'human-classic') && humanColor === WHITE) {
     // 人間が白 → CPU(黒)から始める
     setTimeout(cpuTurn, 300);
   }
@@ -1632,7 +1585,7 @@ function screenToBoard(clientX, clientY) {
 }
 
 function handleBoardTap(clientX, clientY) {
-  const humanPlaying = gameMode === 'human-classic' || gameMode === 'human-advanced';
+  const humanPlaying = gameMode === 'human-advanced' || gameMode === 'human-classic';
   if (!humanPlaying) return;
   if (gameOver) return;
   if (current !== humanColor) return;
@@ -1652,7 +1605,7 @@ function handleBoardTap(clientX, clientY) {
 canvas.addEventListener('click', e => { handleBoardTap(e.clientX, e.clientY); });
 
 canvas.addEventListener('mousemove', e => {
-  const humanPlaying = gameMode === 'human-classic' || gameMode === 'human-advanced';
+  const humanPlaying = gameMode === 'human-advanced' || gameMode === 'human-classic';
   if (!humanPlaying || gameOver || current !== humanColor) return;
   const { x, y } = screenToBoard(e.clientX, e.clientY);
   drawBoard();
@@ -1680,7 +1633,7 @@ function hidePicker() {
 }
 
 document.getElementById('star-human').addEventListener('click', () => {
-  const humanPlaying = gameMode === 'human-classic' || gameMode === 'human-advanced';
+  const humanPlaying = gameMode === 'human-advanced' || gameMode === 'human-classic';
   if (!humanPlaying) return;
   if (gameOver || current !== humanColor) return;
   if (!canUseStarStone(humanColor)) {
@@ -1720,14 +1673,14 @@ document.getElementById('overlay').addEventListener('click', () => {
 //  主要ボタン
 // ═══════════════════════════════════════════════════════════
 document.getElementById('btn-pass').addEventListener('click', () => {
-  const humanPlaying = gameMode === 'human-classic' || gameMode === 'human-advanced';
+  const humanPlaying = gameMode === 'human-advanced' || gameMode === 'human-classic';
   if (!humanPlaying || gameOver || current !== humanColor) return;
   doPass();
   if (!gameOver) setTimeout(cpuTurn, 400);
 });
 
 document.getElementById('btn-resign').addEventListener('click', () => {
-  const humanPlaying = gameMode === 'human-classic' || gameMode === 'human-advanced';
+  const humanPlaying = gameMode === 'human-advanced' || gameMode === 'human-classic';
   if (!humanPlaying || gameOver || current !== humanColor) return;
   doResign();
 });
