@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  星囲碁 / Hoshigo Prototype v1.0h-fixed
+  星囲碁 / Hoshigo Prototype v1.0i
   Concept & Design: 刻神楽 (_tokikagura)
   Implementation support: AI-assisted prototyping
   License: Prototype / private experimental build
@@ -9,7 +9,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 プロトタイプ v1.0h-fixed</title>
+  <title>星囲碁 プロトタイプ v1.0i</title>
   <style>
 /* ════════════════════════════════
    リセット・基礎
@@ -312,7 +312,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 <body>
 <div id="app">
 
-  <div id="title-bar">★ 星囲碁 プロトタイプ v1.0h-fixed-fixed</div>
+  <div id="title-bar">★ 星囲碁 プロトタイプ v1.0i</div>
 
   <!-- 手番・状態 -->
   <div id="status-bar">準備中…</div>
@@ -1193,7 +1193,7 @@ function chooseStarUse(pick, color, moveNo) {
 
 
 // ═══════════════════════════════════════════════════════════
-//  Expert CPU v1.0h
+//  Expert CPU v1.0i
 //  ・9路星囲碁専用の布石感覚
 //  ・空点領域の実地推定
 //  ・弱い連の救出 / 相手弱連への圧力
@@ -1362,6 +1362,29 @@ function expertEvaluateBoard(brd, color) {
   return score;
 }
 
+
+function recentCoordinatePenalty(x, y, color) {
+  // 直近の取り返し・反復地点に吸い寄せられる癖を抑える。
+  // 捕獲で空いた点への再着手自体は合法なので、禁止ではなく減点に留める。
+  let penalty = 0;
+  const lookback = Math.min(moveLog.length, 16);
+  for (let i = 0; i < lookback; i++) {
+    const e = moveLog[moveLog.length - 1 - i];
+    if (!e || e.type !== 'place') continue;
+    const dist = Math.abs(e.x - x) + Math.abs(e.y - y);
+    const weight = Math.max(1, 8 - i * 0.45);
+    if (dist === 0) penalty -= 34 * weight;
+    else if (dist === 1) penalty -= 5 * Math.max(1, 5 - i * 0.3);
+  }
+
+  // 直近2手の同一点・隣接地点へ戻る「ぐるぐる」を特に嫌う。
+  const lastPlaces = moveLog.filter(e => e && e.type === 'place').slice(-4);
+  for (const e of lastPlaces) {
+    if (e.x === x && e.y === y) penalty -= 95;
+  }
+  return penalty;
+}
+
 function expertMoveHeuristicOn(brd, x, y, color, koP, moveNo, checkReplies = true) {
   const tmp = cloneBoard(brd);
   const result = placeStonePure(tmp, x, y, color, koP);
@@ -1371,6 +1394,8 @@ function expertMoveHeuristicOn(brd, x, y, color, koP, moveNo, checkReplies = tru
   const atariPoints = getAtariPointsOn(brd, color);
   const oppAtari = getAtariPointsOn(brd, opp);
   let score = 0;
+
+  score += recentCoordinatePenalty(x, y, color);
 
   if (result.captured.length > 0) score += 220 + result.captured.length * 45;
   if (atariPoints.has(`${x},${y}`)) score += 180;
@@ -1488,22 +1513,70 @@ function chooseExpertStarUse(pick, color, moveNo) {
   return { useStar, starColor };
 }
 
+function isValidDecisionForCurrentBoard(decision, color) {
+  if (!decision) return false;
+  if (!Number.isInteger(decision.x) || !Number.isInteger(decision.y)) return false;
+  if (!inBounds(decision.x, decision.y)) return false;
+  if (board[decision.y][decision.x] !== EMPTY) return false;
+  const stoneColor = decision.useStar ? decision.starColor : color;
+  if (stoneColor !== BLACK && stoneColor !== WHITE) return false;
+  const tmp = cloneBoard(board);
+  return placeStonePure(tmp, decision.x, decision.y, stoneColor, koPoint).ok;
+}
+
+function fallbackLegalDecision(legalMoves, color, moveNo) {
+  // どのAI評価が壊れても、合法手がある限り絶対にパスへ落とさない最後の網。
+  let best = null;
+  for (const [x, y] of legalMoves) {
+    let score = 0;
+    try {
+      score = moveHeuristicOn(board, x, y, color, koPoint, moveNo)
+            + expertAnchorValue(x, y) * 0.5
+            + recentCoordinatePenalty(x, y, color);
+    } catch(e) {
+      score = -9999 + Math.random();
+    }
+    if (!best || score > best.score) best = { x, y, score };
+  }
+  const m = best || { x: legalMoves[0][0], y: legalMoves[0][1], score: 0 };
+  return { x: m.x, y: m.y, useStar: false, starColor: color };
+}
+
 function expertAI(legalMoves, color) {
   if (legalMoves.length === 0) return null;
   const moveNo = totalMoves + 1;
-  const book = expertOpeningBook(legalMoves, color, moveNo);
-  const candidates = topExpertMoves(board, legalMoves, color, koPoint, moveNo, EXPERT_AI_CANDIDATES);
-  const base = candidates.length ? candidates : legalMoves.map(([x, y]) => ({ x, y, score: 0 }));
+  const fallback = fallbackLegalDecision(legalMoves, color, moveNo);
+  let book = null;
+  let candidates = [];
+  try { book = expertOpeningBook(legalMoves, color, moveNo); } catch(e) { book = null; }
+  try { candidates = topExpertMoves(board, legalMoves, color, koPoint, moveNo, EXPERT_AI_CANDIDATES); } catch(e) { candidates = []; }
+  const base = candidates.length ? candidates : legalMoves.map(([x, y]) => ({
+    x, y,
+    score: expertMoveHeuristicOn(board, x, y, color, koPoint, moveNo, false)
+  })).filter(m => Number.isFinite(m.score));
+
   const scored = base.map(m => {
-    const reading = expertLookaheadScore(m.x, m.y, color);
+    let reading = -999999;
+    try { reading = expertLookaheadScore(m.x, m.y, color); } catch(e) { reading = -999999; }
     const safeReading = Number.isFinite(reading) ? reading : -999999;
-    let score = m.score * 0.42 + safeReading * 0.58;
+    let score = m.score * 0.46 + safeReading * 0.54;
+    score += recentCoordinatePenalty(m.x, m.y, color) * 0.45;
     if (book && m.x === book.x && m.y === book.y) score += 55;
     return { x: m.x, y: m.y, score, baseScore: m.score, reading: safeReading };
   }).filter(m => Number.isFinite(m.score)).sort((a, b) => b.score - a.score);
-  const pick = scored[0] || book || { x: legalMoves[0][0], y: legalMoves[0][1], score: 0 };
-  const star = chooseExpertStarUse(pick, color, moveNo);
-  return { x: pick.x, y: pick.y, useStar: star.useStar, starColor: star.starColor };
+
+  const rawPick = scored[0] || book || fallback;
+  const star = chooseExpertStarUse(rawPick, color, moveNo);
+  let decision = { x: rawPick.x, y: rawPick.y, useStar: star.useStar, starColor: star.starColor };
+
+  // 星石色での自殺・コウなどを避ける。星石が危険なら通常手に降格する。
+  if (!isValidDecisionForCurrentBoard(decision, color)) {
+    decision = { x: rawPick.x, y: rawPick.y, useStar: false, starColor: color };
+  }
+  if (!isValidDecisionForCurrentBoard(decision, color)) {
+    decision = fallback;
+  }
+  return decision;
 }
 
 function classicAI(legalMoves, color) {
@@ -1557,9 +1630,33 @@ function cpuTurn() {
   if (ai === 'human') return;
   const legal = getLegalMoves(board, current, koPoint);
   if (legal.length === 0) { doPass(); return; }
-  const decision = ai === 'classic' ? classicAI(legal, current) : ai === 'expert' ? expertAI(legal, current) : advancedAI(legal, current);
-  if (!decision) { doPass(); return; }
-  doMove(decision.x, decision.y, decision.useStar, decision.starColor);
+
+  const color = current;
+  const moveNo = totalMoves + 1;
+  let decision = null;
+  try {
+    decision = ai === 'classic' ? classicAI(legal, color)
+             : ai === 'expert' ? expertAI(legal, color)
+             : advancedAI(legal, color);
+  } catch(e) {
+    decision = null;
+  }
+
+  if (!isValidDecisionForCurrentBoard(decision, color)) {
+    decision = fallbackLegalDecision(legal, color, moveNo);
+  }
+
+  // ここでもう一度確認。合法手がある限り、CPUはパスではなく最善風フォールバックを打つ。
+  if (!isValidDecisionForCurrentBoard(decision, color)) {
+    const [x, y] = legal[0];
+    decision = { x, y, useStar: false, starColor: color };
+  }
+
+  const ok = doMove(decision.x, decision.y, decision.useStar, decision.starColor);
+  if (!ok && legal.length > 0) {
+    const fb = fallbackLegalDecision(legal, color, moveNo);
+    doMove(fb.x, fb.y, false, color);
+  }
 }
 
 function cpuTurnSimple() { cpuTurn(); }
@@ -1657,7 +1754,7 @@ function buildSGF() {
     'SGF export prioritizes board reproduction. ' +
     `Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
 
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.0h-fixed]C[${rootComment}]`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.0i]C[${rootComment}]`;
 
   // ── 手順ノード ──
   for (const e of moveLog) {
