@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  星囲碁 / Hoshigo Prototype v1.0i
+  星囲碁 / Hoshigo Prototype v1.1i_fixed
   Concept & Design: 刻神楽 (_tokikagura)
   Implementation support: AI-assisted prototyping
   License: Prototype / private experimental build
@@ -9,7 +9,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 プロトタイプ v1.0i</title>
+  <title>星囲碁 プロトタイプ v1.1i_fixed</title>
   <style>
 /* ════════════════════════════════
    リセット・基礎
@@ -312,7 +312,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 <body>
 <div id="app">
 
-  <div id="title-bar">★ 星囲碁 プロトタイプ v1.0i</div>
+  <div id="title-bar">★ 星囲碁 プロトタイプ v1.1i_fixed</div>
 
   <!-- 手番・状態 -->
   <div id="status-bar">準備中…</div>
@@ -494,9 +494,12 @@ const SCORE_STAR_NEAR_ATARI= 30;   // 星石: 自分のアタリ連の隣
 const SIMPLE_AI_CANDIDATES = 10;   // 先読み対象にする候補手数（モバイル軽量化）
 const SIMPLE_AI_REPLY_LIMIT = 6;    // 相手応手の候補数（モバイル軽量化）
 const SIMPLE_AI_RESCUE_LIMIT = 4;   // 3手目の候補数（モバイル軽量化）
-const EXPERT_AI_CANDIDATES = 18;    // Expert: 候補手数（重いが強い）
-const EXPERT_AI_REPLY_LIMIT = 10;   // Expert: 相手応手候補
-const EXPERT_AI_RESCUE_LIMIT = 6;   // Expert: 3手目候補
+const EXPERT_AI_CANDIDATES = 10;    // Expert: MCTS併用のため候補を絞る
+const EXPERT_AI_REPLY_LIMIT = 7;    // Expert: 相手応手候補
+const EXPERT_AI_RESCUE_LIMIT = 4;   // Expert: 3手目候補
+const EXPERT_MCTS_PLAYOUTS = 5;     // Expert v1.1: 候補ごとの軽量プレイアウト回数
+const EXPERT_MCTS_DEPTH = 34;       // Expert v1.1: プレイアウト最大手数
+const EXPERT_MCTS_TOP_K = 6;        // Expert v1.1: プレイアウト内で選ぶ上位候補数
 
 // ═══════════════════════════════════════════════════════════
 //  Canvas セットアップ
@@ -1193,7 +1196,7 @@ function chooseStarUse(pick, color, moveNo) {
 
 
 // ═══════════════════════════════════════════════════════════
-//  Expert CPU v1.0i
+//  Expert CPU v1.1i_fixed
 //  ・9路星囲碁専用の布石感覚
 //  ・空点領域の実地推定
 //  ・弱い連の救出 / 相手弱連への圧力
@@ -1279,12 +1282,13 @@ function expertGroupScore(brd, color) {
       g.stones.forEach(([sx, sy]) => visited.add(`${sx},${sy}`));
       const libs = g.liberties.size;
       const size = g.stones.length;
-      score += size * 10 + Math.min(libs, 7) * 13;
-      if (libs === 1) score -= 160 + size * 28;
-      else if (libs === 2) score -= 52 + size * 10;
-      else if (libs >= 4) score += 22 + Math.min(size, 5) * 5;
 
-      // 眼っぽい呼吸点を少し見る。完全な死活ではないが、終盤の生存判断に効く。
+      // v1.1: 「眼作り一辺倒」を抑える。生存評価は必要だが、勝つ評価より強くしない。
+      score += size * 8 + Math.min(libs, 7) * 11;
+      if (libs === 1) score -= 185 + size * 30;
+      else if (libs === 2) score -= 58 + size * 8;
+      else if (libs >= 4) score += 14 + Math.min(size, 5) * 3;
+
       let eyeish = 0;
       g.liberties.forEach(lib => {
         const [lx, ly] = lib.split(',').map(Number);
@@ -1293,8 +1297,9 @@ function expertGroupScore(brd, color) {
         const oppN = around.filter(([nx, ny]) => brd[ny][nx] === opp).length;
         if (ownN >= 2 && oppN === 0) eyeish++;
       });
-      if (eyeish >= 2) score += 55;
-      else if (eyeish === 1) score += 18;
+      // 眼は終盤ほど価値がある。序中盤の過剰な内側補強は避ける。
+      if (eyeish >= 2) score += 24;
+      else if (eyeish === 1) score += 6;
     }
   }
   return score;
@@ -1363,6 +1368,150 @@ function expertEvaluateBoard(brd, color) {
 }
 
 
+function expertAreaBalance(brd, color) {
+  // v1.1: プレイアウト最終局面を「石数＋地の見込み」で雑に測る。
+  // 完全な地合い計算ではないが、眼作りだけに寄る癖を弱める。
+  const opp = 1 - color;
+  let score = 0;
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const v = brd[y][x];
+      if (v === color) score += 8;
+      else if (v === opp) score -= 8;
+      else {
+        const own = countAround(brd, x, y, color, 2).own;
+        const enemy = countAround(brd, x, y, opp, 2).own;
+        if (own > enemy) score += 2.2 + Math.min(4, own - enemy);
+        else if (enemy > own) score -= 2.2 + Math.min(4, enemy - own);
+      }
+    }
+  }
+  score += emptyRegionScore(brd, color) * 0.85;
+  score += expertGroupScore(brd, color) * 0.22;
+  score -= expertGroupScore(brd, opp) * 0.22;
+  return score;
+}
+
+function expertAttackBonus(brd, x, y, color) {
+  // 隣接・近接する相手の弱い連を攻める。守り過ぎExpertを矯正するための攻撃評価。
+  const opp = 1 - color;
+  let score = 0;
+  const seen = new Set();
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (!inBounds(nx, ny) || brd[ny][nx] !== opp) continue;
+      const key = `${nx},${ny}`;
+      if (seen.has(key)) continue;
+      const g = getGroup(brd, nx, ny);
+      g.stones.forEach(([sx, sy]) => seen.add(`${sx},${sy}`));
+      const dist = Math.abs(dx) + Math.abs(dy);
+      const libs = g.liberties.size;
+      if (libs === 1) score += dist <= 1 ? 120 : 70;
+      else if (libs === 2) score += dist <= 1 ? 62 : 34;
+      else if (libs === 3 && dist <= 1) score += 18;
+    }
+  }
+  return score;
+}
+
+function expertOwnTerritoryFillPenalty(brd, x, y, color, moveNo, tactical) {
+  // 自分の地や眼の内側を早く埋める手を嫌う。ただし捕獲・アタリ救出なら許す。
+  if (tactical) return 0;
+  const r1 = countAround(brd, x, y, color, 1);
+  const r2 = countAround(brd, x, y, color, 2);
+  let p = 0;
+  if (r1.own >= 3 && r1.opp === 0) p -= middlePhase(moveNo) ? 55 : 34;
+  if (r1.own >= 2 && r1.opp === 0 && r1.empty <= 1) p -= 42;
+  if (r2.own >= 6 && r2.opp === 0) p -= 36;
+  return p;
+}
+
+function playoutMoveScore(brd, x, y, color, koP, rootColor, ply) {
+  const tmp = cloneBoard(brd);
+  const result = placeStonePure(tmp, x, y, color, koP);
+  if (!result.ok) return -Infinity;
+  const opp = 1 - color;
+  const self = getGroup(tmp, x, y);
+  let score = 0;
+  score += result.captured.length * 65;
+  score += Math.min(self.liberties.size, 5) * 12;
+  if (self.liberties.size === 1) score -= 180;
+  else if (self.liberties.size === 2) score -= 36;
+  score += expertAnchorValue(x, y) * (ply < 10 ? 0.9 : 0.35);
+  score += expertAttackBonus(brd, x, y, color) * 0.55;
+  const r1 = countAround(brd, x, y, color, 1);
+  const r2 = countAround(brd, x, y, color, 2);
+  if (r1.own >= 3 && r1.opp === 0 && result.captured.length === 0) score -= 42;
+  if (r2.own >= 6 && r2.opp <= 1 && result.captured.length === 0) score -= 34;
+  if (color === rootColor) score += expertAreaBalance(tmp, rootColor) * 0.10;
+  else score -= expertAreaBalance(tmp, rootColor) * 0.10;
+  score += Math.random() * 8;
+  return score;
+}
+
+function choosePlayoutMove(brd, legal, color, koP, rootColor, ply) {
+  if (!legal.length) return null;
+  const scored = legal.map(([x, y]) => ({
+    x, y,
+    score: playoutMoveScore(brd, x, y, color, koP, rootColor, ply)
+  })).filter(m => Number.isFinite(m.score)).sort((a, b) => b.score - a.score);
+  if (!scored.length) {
+    const [x, y] = legal[Math.floor(Math.random() * legal.length)];
+    return { x, y };
+  }
+  const k = Math.min(EXPERT_MCTS_TOP_K, scored.length);
+  // 上位から少しランダムに選ぶ。完全貪欲だと同じ循環に吸われる。
+  const r = Math.random();
+  const idx = r < 0.58 ? 0 : r < 0.82 ? Math.min(1, k - 1) : Math.floor(Math.random() * k);
+  return scored[idx];
+}
+
+function expertMonteCarloScore(x, y, color) {
+  // v1.1: Expert専用の軽量MCTS風プレイアウト。
+  // 本格MCTSではないが、「今の形が最終的に地になるか」を少しだけ未来で転がす。
+  const first = cloneBoard(board);
+  const firstResult = placeStonePure(first, x, y, color, koPoint);
+  if (!firstResult.ok) return -Infinity;
+
+  let total = 0;
+  for (let p = 0; p < EXPERT_MCTS_PLAYOUTS; p++) {
+    const sim = cloneBoard(first);
+    let cur = 1 - color;
+    let ko = firstResult.newKo;
+    let passes = 0;
+    for (let depth = 0; depth < EXPERT_MCTS_DEPTH && passes < 2; depth++) {
+      const legal = getLegalMovesPure(sim, cur, ko);
+      if (!legal.length) {
+        passes++;
+        ko = null;
+        cur = 1 - cur;
+        continue;
+      }
+      const m = choosePlayoutMove(sim, legal, cur, ko, color, depth);
+      if (!m) {
+        passes++;
+        ko = null;
+        cur = 1 - cur;
+        continue;
+      }
+      const r = placeStonePure(sim, m.x, m.y, cur, ko);
+      if (r.ok) {
+        passes = 0;
+        ko = r.newKo;
+        cur = 1 - cur;
+      } else {
+        passes++;
+        ko = null;
+        cur = 1 - cur;
+      }
+    }
+    total += expertAreaBalance(sim, color);
+  }
+  return total / EXPERT_MCTS_PLAYOUTS;
+}
+
+
 function recentCoordinatePenalty(x, y, color) {
   // 直近の取り返し・反復地点に吸い寄せられる癖を抑える。
   // 捕獲で空いた点への再着手自体は合法なので、禁止ではなく減点に留める。
@@ -1397,26 +1546,26 @@ function expertMoveHeuristicOn(brd, x, y, color, koP, moveNo, checkReplies = tru
 
   score += recentCoordinatePenalty(x, y, color);
 
-  if (result.captured.length > 0) score += 220 + result.captured.length * 45;
-  if (atariPoints.has(`${x},${y}`)) score += 180;
-  if (oppAtari.has(`${x},${y}`)) score += 88;
+  const tactical = result.captured.length > 0 || atariPoints.has(`${x},${y}`) || oppAtari.has(`${x},${y}`);
+  if (result.captured.length > 0) score += 230 + result.captured.length * 48;
+  if (atariPoints.has(`${x},${y}`)) score += 170;
+  if (oppAtari.has(`${x},${y}`)) score += 105;
 
   const libs = selfAfter.liberties.size;
-  score += Math.min(libs, 7) * 18;
-  if (libs === 1) score -= 260;
-  else if (libs === 2) score -= 70;
-  else if (libs >= 4) score += 28;
+  score += Math.min(libs, 7) * 14;
+  if (libs === 1) score -= 280;
+  else if (libs === 2) score -= 66;
+  else if (libs >= 4) score += 16;
 
   score += expertTerritoryMoveShape(brd, x, y, color, moveNo);
-  score += expertEvaluateBoard(tmp, color) * 0.23;
+  score += expertAttackBonus(brd, x, y, color);
+  score += expertOwnTerritoryFillPenalty(brd, x, y, color, moveNo, tactical);
+  score += expertEvaluateBoard(tmp, color) * 0.18;
 
-  // 相手の次の一撃で取られやすい形は、読みに入る前から嫌う。
-  // ただし候補生成中にここへ入ると topExpertMoves → expertMoveHeuristicOn が
-  // 再帰してSafariで Maximum call stack size exceeded になるため、
-  // checkReplies=false のときは必ず浅い評価で止める。
+  // v1.1: 相手の痛い応手は見る。ただし再帰しない浅い候補で止める。
   if (checkReplies) {
     const oppMoves = getLegalMovesPure(tmp, opp, result.newKo);
-    const sharpReplies = topExpertMoves(tmp, oppMoves, opp, result.newKo, moveNo + 1, Math.min(5, EXPERT_AI_REPLY_LIMIT));
+    const sharpReplies = topExpertMoves(tmp, oppMoves, opp, result.newKo, moveNo + 1, Math.min(4, EXPERT_AI_REPLY_LIMIT));
     if (sharpReplies.length) {
       let worst = 0;
       for (const r of sharpReplies) {
@@ -1426,7 +1575,7 @@ function expertMoveHeuristicOn(brd, x, y, color, koP, moveNo, checkReplies = tru
         const loss = expertEvaluateBoard(tmp, color) - expertEvaluateBoard(after, color);
         if (loss > worst) worst = loss;
       }
-      score -= worst * 0.18;
+      score -= worst * 0.14;
     }
   }
   return score;
@@ -1557,12 +1706,17 @@ function expertAI(legalMoves, color) {
 
   const scored = base.map(m => {
     let reading = -999999;
+    let mc = -999999;
     try { reading = expertLookaheadScore(m.x, m.y, color); } catch(e) { reading = -999999; }
+    try { mc = expertMonteCarloScore(m.x, m.y, color); } catch(e) { mc = -999999; }
     const safeReading = Number.isFinite(reading) ? reading : -999999;
-    let score = m.score * 0.46 + safeReading * 0.54;
-    score += recentCoordinatePenalty(m.x, m.y, color) * 0.45;
-    if (book && m.x === book.x && m.y === book.y) score += 55;
-    return { x: m.x, y: m.y, score, baseScore: m.score, reading: safeReading };
+    const safeMC = Number.isFinite(mc) ? mc : -999999;
+
+    // v1.1: 眼・呼吸点だけの静的評価に寄りすぎないよう、軽量プレイアウトを混ぜる。
+    let score = m.score * 0.34 + safeReading * 0.36 + safeMC * 0.30;
+    score += recentCoordinatePenalty(m.x, m.y, color) * 0.35;
+    if (book && m.x === book.x && m.y === book.y) score += 44;
+    return { x: m.x, y: m.y, score, baseScore: m.score, reading: safeReading, mc: safeMC };
   }).filter(m => Number.isFinite(m.score)).sort((a, b) => b.score - a.score);
 
   const rawPick = scored[0] || book || fallback;
@@ -1754,7 +1908,7 @@ function buildSGF() {
     'SGF export prioritizes board reproduction. ' +
     `Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
 
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.0i]C[${rootComment}]`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.1i_fixed]C[${rootComment}]`;
 
   // ── 手順ノード ──
   for (const e of moveLog) {
