@@ -1,9 +1,19 @@
 <!DOCTYPE html>
+<!--
+  星囲碁 / Hoshi Go Test Type v1.5
+  Concept & Design: 刻神楽 (_tokikagura)
+  Implementation support: AI-assisted prototyping
+  
+  [Early Test Version]
+  The AI is still being improved. Feedback is welcome.
+  
+  License: Custom Experimental License (All Rights Reserved)
+-->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 | Hoshi Go Prototype v1.4.1</title>
+  <title>星囲碁 | Hoshi Go Test Type v1.5</title>
   <style>
 /* ════════════════════════════════
    Reset & Base
@@ -34,14 +44,21 @@ body {
 }
 
 /* ════════════════════════════════
-   Title Bar
+   Title & Subtitle Bar
 ════════════════════════════════ */
 #title-bar {
   font-size: 1.1rem;
   color: #ffd700;
   letter-spacing: 2px;
   text-align: center;
-  padding: 2px 0;
+  padding-top: 2px;
+}
+#test-version-tag {
+  font-size: 0.72rem;
+  color: #aaa;
+  text-align: center;
+  margin-bottom: 2px;
+  letter-spacing: 0.5px;
 }
 
 /* ════════════════════════════════
@@ -306,14 +323,19 @@ label { font-size: 0.82rem; cursor: pointer; }
 <body>
 <div id="app">
 
-  <div id="title-bar">★ 星囲碁 | Hoshi Go v1.4.1</div>
+  <!-- Test Type Header Designation -->
+  <div id="title-bar">★ 星囲碁 | Hoshi Go v1.5</div>
+  <div id="test-version-tag">⚠️ Early Test Version. AI is being improved. Feedback welcome.</div>
 
+  <!-- Game Status -->
   <div id="status-bar">Initializing...</div>
 
+  <!-- Board Wrap -->
   <div id="board-wrap">
     <canvas id="board-canvas"></canvas>
   </div>
 
+  <!-- Star Stone Panel -->
   <div id="star-panel">
     <div class="star-row">
       <span class="star-badge" id="star-human" title="Use Star Stone">★</span>
@@ -321,12 +343,14 @@ label { font-size: 0.82rem; cursor: pointer; }
     </div>
   </div>
 
+  <!-- Action Buttons -->
   <div id="main-btns">
     <button class="action" id="btn-pass">Pass</button>
     <button class="action danger" id="btn-resign">Resign</button>
     <button class="action" id="btn-reset">Reset</button>
   </div>
 
+  <!-- Collapsible Details Section -->
   <div id="detail-section">
 
     <button id="btn-detail-toggle">
@@ -336,6 +360,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 
     <div id="detail-content">
 
+      <!-- Game Mode Settings -->
       <div class="card">
         <h2>Game Mode</h2>
         <div class="setting-row">
@@ -363,6 +388,7 @@ label { font-size: 0.82rem; cursor: pointer; }
         </div>
       </div>
 
+      <!-- Star Stone Expiry Rule -->
       <div class="card">
         <h2>Star Stone Expiry</h2>
         <div class="setting-row">
@@ -379,6 +405,7 @@ label { font-size: 0.82rem; cursor: pointer; }
         </div>
       </div>
 
+      <!-- Game Stats -->
       <div class="card">
         <h2>Statistics</h2>
         <div id="stats-grid">
@@ -389,11 +416,13 @@ label { font-size: 0.82rem; cursor: pointer; }
         </div>
       </div>
 
+      <!-- Move Log -->
       <div class="card">
         <h2>Move Log</h2>
         <div id="move-log"></div>
       </div>
 
+      <!-- SGF Export Panel -->
       <div class="card">
         <h2>SGF Export</h2>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -407,7 +436,13 @@ label { font-size: 0.82rem; cursor: pointer; }
         ></textarea>
       </div>
 
-    </div></div></div><div id="overlay"></div>
+    </div><!-- /detail-content -->
+  </div><!-- /detail-section -->
+
+</div><!-- /app -->
+
+<!-- Star Picker Popup -->
+<div id="overlay"></div>
 <div id="star-picker">
   <p>★ Select Star Stone Color</p>
   <div class="pick-row">
@@ -475,7 +510,7 @@ const EXPERT_AI_CANDIDATES = 12;
 const EXPERT_AI_REPLY_LIMIT = 7;
 const EXPERT_AI_RESCUE_LIMIT = 4;
 
-// MCTS Search parameters tuned down for heavy mobile performance
+// MCTS Search scaled down for mobile-friendly browser performance
 const EXPERT_MCTS_PLAYOUTS = 4; 
 const EXPERT_MCTS_DEPTH = 24;
 const EXPERT_MCTS_TOP_K = 5;
@@ -519,7 +554,7 @@ let expireMode = 0;
 let cpuTimer = null;
 let cpuTimeout = null;
 
-// Pure Web Audio API Generator Subroutine
+// Pure Web Audio API Synth Engine
 let audioCtx = null;
 function playStoneSound(color, isStar) {
   try {
@@ -558,7 +593,7 @@ function playStoneSound(color, isStar) {
       osc.stop(now + 0.07);
     }
   } catch (e) {
-    console.log("Audio presentation blocked or unsupported:", e);
+    console.log("Audio representation blocked:", e);
   }
 }
 
@@ -604,7 +639,7 @@ function drawBoard() {
     for (let x = 0; x < SIZE; x++)
       if (board[y][x] !== EMPTY) drawStone(x, y, board[y][x]);
 
-  // Last Move Indicator Overlay
+  // Last Move Marker Ring Overlay
   if (lastMove && board[lastMove.y][lastMove.x] !== EMPTY) {
     const lx = MARGIN + lastMove.x * CELL;
     const ly = MARGIN + lastMove.y * CELL;
@@ -972,7 +1007,7 @@ function territoryPotential(brd, x, y, color, moveNo) {
   return score;
 }
 
-// Global Territory & Area BFS Counter Subroutine
+// 【v1.5】ピュア中国ルール領地・石数一括カウンター
 function calculateFinalScore() {
   let blackPoints = 0;
   let whitePoints = 0;
@@ -980,11 +1015,9 @@ function calculateFinalScore() {
 
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
-      if (board[y][x] === BLACK) {
-        blackPoints++;
-      } else if (board[y][x] === WHITE) {
-        whitePoints++;
-      } else if (!visited[y][x]) {
+      if (board[y][x] === BLACK) { blackPoints++; } 
+      else if (board[y][x] === WHITE) { whitePoints++; } 
+      else if (!visited[y][x]) {
         const queue = [[x, y]];
         const region = [[x, y]];
         visited[y][x] = true;
@@ -1005,7 +1038,6 @@ function calculateFinalScore() {
             }
           }
         }
-
         if (borders.size === 1) {
           if (borders.has(BLACK)) blackPoints += region.length;
           if (borders.has(WHITE)) whitePoints += region.length;
@@ -1086,7 +1118,7 @@ function topMoves(brd, moves, color, koP, moveNo, limit) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  MCTS Search & Lookahead Subroutines
+//  MCTS Lookahead Search Engines
 // ═══════════════════════════════════════════════════════════
 function lookaheadScore(x, y, color) {
   const opp = 1 - color;
@@ -1147,11 +1179,9 @@ function chooseStarUse(pick, color, moveNo) {
   return { useStar, starColor };
 }
 
-
 // ═══════════════════════════════════════════════════════════
-//  ★ Expert CPU Core v1.4.1 Brain Subroutines
+//  ★ Expert CPU Subroutines
 // ═══════════════════════════════════════════════════════════
-
 function expertPhase(moveNo) {
   if (moveNo < 14) return 'opening';
   if (moveNo < 44) return 'middle';
@@ -1183,7 +1213,6 @@ function measureDiagonalChain(brd, startX, startY, color, visitedGlobal) {
     const diags = [[cx-1, cy-1], [cx+1, cy-1], [cx-1, cy+1], [cx+1, cy+1]];
     for (const [nx, ny] of diags) {
       if (!inBounds(nx, ny) || brd[ny][nx] !== color) continue;
-      
       const nk = `${nx},${ny}`;
       if (visitedLocal.has(nk)) continue;
       
@@ -1200,14 +1229,11 @@ function measureDiagonalChain(brd, startX, startY, color, visitedGlobal) {
 function computeDiagonalSewingPenalty(brd, color) {
   let totalPenalty = 0;
   const visitedGlobal = new Set();
-  
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
       if (brd[y][x] === color && !visitedGlobal.has(`${x},${y}`)) {
         const chainLen = measureDiagonalChain(brd, x, y, color, visitedGlobal);
-        if (chainLen >= 3) {
-          totalPenalty -= (chainLen * 110); 
-        }
+        if (chainLen >= 3) { totalPenalty -= (chainLen * 110); }
       }
     }
   }
@@ -1221,12 +1247,9 @@ function computeVulnerabilityScore(brd, color) {
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
       if (brd[y][x] !== EMPTY) continue;
-      
       const testBrd = cloneBoard(brd);
       const res = placeStonePure(testBrd, x, y, opp, null);
-      if (res.ok && res.captured.length > 0) {
-        vulnerability -= (res.captured.length * 150);
-      }
+      if (res.ok && res.captured.length > 0) { vulnerability -= (res.captured.length * 150); }
       
       const myNeighbors = neighbors(x, y).filter(([nx, ny]) => brd[ny][nx] === color);
       if (myNeighbors.length >= 2) {
@@ -1263,9 +1286,7 @@ function emptyRegionScore(brd, color) {
           if (v === EMPTY) {
             const k = `${nx},${ny}`;
             if (!seen.has(k)) { seen.add(k); stack.push([nx, ny]); }
-          } else {
-            border.add(v);
-          }
+          } else { border.add(v); }
         }
       }
       const n = region.length;
@@ -1592,9 +1613,7 @@ function fallbackLegalDecision(legalMoves, color, moveNo) {
       score = moveHeuristicOn(board, x, y, color, koPoint, moveNo)
             + expertAnchorValue(x, y) * 0.5
             + recentCoordinatePenalty(x, y, color);
-    } catch(e) {
-      score = -9999 + Math.random();
-    }
+    } catch(e) { score = -9999 + Math.random(); }
     if (!best || score > best.score) best = { x, y, score };
   }
   const m = best || { x: legalMoves[0][0], y: legalMoves[0][1], score: 0 };
@@ -1610,15 +1629,13 @@ function expertAI(legalMoves, color) {
   try { book = expertOpeningBook(legalMoves, color, moveNo); } catch(e) { book = null; }
   try { candidates = topExpertMoves(board, legalMoves, color, koPoint, moveNo, EXPERT_AI_CANDIDATES); } catch(e) { candidates = []; }
   const base = candidates.length ? candidates : legalMoves.map(([x, y]) => ({
-    x, y,
-    score: expertMoveHeuristicOn(board, x, y, color, koPoint, moveNo, false)
+    x, y, score: expertMoveHeuristicOn(board, x, y, color, koPoint, moveNo, false)
   })).filter(m => Number.isFinite(m.score));
 
   const scored = base.map(m => {
-    let reading = -999999;
-    let mc = -999999;
-    try { reading = expertLookaheadScore(m.x, m.y, color); } catch(e) { reading = -999999; }
-    try { mc = expertMonteCarloScore(m.x, m.y, color); } catch(e) { mc = -999999; }
+    let reading = -999999; let mc = -999999;
+    try { reading = expertLookaheadScore(m.x, m.y, color); } catch(e) {}
+    try { mc = expertMonteCarloScore(m.x, m.y, color); } catch(e) {}
     const safeReading = Number.isFinite(reading) ? reading : -999999;
     const safeMC = Number.isFinite(mc) ? mc : -999999;
 
@@ -1632,12 +1649,8 @@ function expertAI(legalMoves, color) {
   const star = chooseExpertStarUse(rawPick, color, moveNo);
   let decision = { x: rawPick.x, y: rawPick.y, useStar: star.useStar, starColor: star.starColor };
 
-  if (!isValidDecisionForCurrentBoard(decision, color)) {
-    decision = { x: rawPick.x, y: rawPick.y, useStar: false, starColor: color };
-  }
-  if (!isValidDecisionForCurrentBoard(decision, color)) {
-    decision = fallback;
-  }
+  if (!isValidDecisionForCurrentBoard(decision, color)) { decision = { x: rawPick.x, y: rawPick.y, useStar: false, starColor: color }; }
+  if (!isValidDecisionForCurrentBoard(decision, color)) { decision = fallback; }
   return decision;
 }
 
@@ -1678,31 +1691,26 @@ function aiForCurrentColor() {
   return current === humanColor ? 'human' : 'expert';
 }
 
+// ═══════════════════════════════════════════════════════════
+//  Main Move Handlers & Loop Engine
+// ═══════════════════════════════════════════════════════════
 function cpuTurn() {
   cpuTimeout = null;
   if (gameOver) return;
   const ai = aiForCurrentColor();
   if (ai === 'human') return;
 
-  // Anti-Zombie Subroutine: Prevents meaningless invasion when utterly crushed
+  // ─── Anti-Zombie Resign Safeguard Subroutine ───
   if (ai === 'expert' && totalMoves > 12) {
     let myStones = 0;
     for (let y = 0; y < SIZE; y++) {
-      for (let x = 0; x < SIZE; x++) {
-        if (board[y][x] === current) myStones++;
-      }
+      for (let x = 0; x < SIZE; x++) { if (board[y][x] === current) myStones++; }
     }
     if (myStones <= 4) {
       try {
         const score = expertEvaluateBoard(board, current);
-        if (score < -240) {
-          doResign();
-          return;
-        }
-      } catch (e) {
-        doResign();
-        return;
-      }
+        if (score < -240) { doResign(); return; }
+      } catch (e) { doResign(); return; }
     }
   }
 
@@ -1716,12 +1724,30 @@ function cpuTurn() {
     decision = ai === 'classic' ? classicAI(legal, color)
              : ai === 'expert' ? expertAI(legal, color)
              : advancedAI(legal, color);
-  } catch(e) {
-    decision = null;
-  }
+  } catch(e) { decision = null; }
 
   if (!isValidDecisionForCurrentBoard(decision, color)) {
     decision = fallbackLegalDecision(legal, color, moveNo);
+  }
+
+  // ─── 【v1.5 ゾンビ突撃・強制迎撃ガードレール】 ───
+  // AIが決めた侵入先が「相手の確定地（打った後の呼吸数が2以下で、石の捕獲も発生しない自爆点）」であり、
+  // かつすでに劣勢な場合、その暴発を上書きキャンセルしてエレガントな「Pass」へ変更させる。
+  if (decision && !decision.useStar) {
+    try {
+      const testBrd = cloneBoard(board);
+      const res = placeStonePure(testBrd, decision.x, decision.y, color, koPoint);
+      if (res.ok && res.captured.length === 0) {
+        const g = getGroup(testBrd, decision.x, decision.y);
+        if (g.liberties.size <= 2) {
+          const bScore = expertEvaluateBoard(board, color);
+          if (bScore < -60) { 
+            doPass();
+            return;
+          }
+        }
+      }
+    } catch(e) {}
   }
 
   const ok = doMove(decision.x, decision.y, decision.useStar, decision.starColor);
@@ -1766,9 +1792,7 @@ function updateStarPanel() {
   }
 }
 
-function updateModeUI() {
-  document.getElementById('row-cpu-level').style.display = 'none';
-}
+function updateModeUI() { document.getElementById('row-cpu-level').style.display = 'none'; }
 
 function updateStats() {
   document.getElementById('st-moves').textContent = totalMoves;
@@ -1778,15 +1802,15 @@ function updateStats() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  SGF System & Custom Anti-Safari MIME Safe Exporting
+//  SGF System & MIME Safe Exporting
 // ═══════════════════════════════════════════════════════════
 function toSGFCoord(x, y) { return String.fromCharCode(97 + x) + String.fromCharCode(97 + y); }
 
 function buildSGF() {
   const expireLabel = ['No Expiry', 'Locked at Empty<=25', 'Locked after Pass'][expireMode] || '';
   const modeLabel   = gameMode === 'human-expert' ? 'Human vs Expert' : gameMode === 'human-advanced' ? 'Human vs Advanced' : gameMode === 'human-classic' ? 'Human vs Classic' : 'CPU Match';
-  const rootComment = `星囲碁 / Hoshi Go v1.4.1. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.4.1]C[${rootComment}]`;
+  const rootComment = `星囲碁 / Hoshi Go Test Type v1.5. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.5]C[${rootComment}]`;
 
   for (const e of moveLog) {
     const playerName = e.player === BLACK ? 'Black' : 'White';
@@ -1838,31 +1862,27 @@ document.getElementById('btn-sgf-dl').addEventListener('click', () => {
   showSGFPreview(sgf);
 
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(sgf).catch(err => console.log("Clipboard fallback ready"));
+    navigator.clipboard.writeText(sgf).catch(err => {});
   }
 
   try {
     const blob = new Blob([sgf], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
-    
     const a = document.createElement('a');
     a.href = url;
     a.download = `Hoshigo_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.sgf`;
-    
     document.body.appendChild(a);
     a.click();
-    
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     setSGFMsg('✅ Download started (also copied to clipboard).', false);
-
   } catch (error) {
-    setSGFMsg('🔒 Blocked by Safari restrictions. SGF copied to clipboard instead.', false);
+    setSGFMsg('🔒 Clipboard fallback activated.', false);
   }
 });
 
 // ═══════════════════════════════════════════════════════════
-//  Move Handlers & Main Loop Engine
+//  Execution Pipeline Engine
 // ═══════════════════════════════════════════════════════════
 function renderLog() {
   const el = document.getElementById('move-log');
@@ -1918,17 +1938,13 @@ function doPass() {
   moveLog.push({ moveNo: totalMoves, player: current, type: 'pass' });
   renderLog(); updateStats();
   
-  // Both passed triggered: Auto Score Aggregator Engine
+  // 【v1.5仕様】両者連続パス時の自動勝敗判定トリガー
   if (consecutivePasses >= 2) {
     const score = calculateFinalScore();
     let resultStr = `Both passed (Black: ${score.black} | White: ${score.white}). `;
-    if (score.black > score.white) {
-      resultStr += "🏆 Black wins!";
-    } else if (score.white > score.black) {
-      resultStr += "🏆 White wins!";
-    } else {
-      resultStr += "Draw!";
-    }
+    if (score.black > score.white) { resultStr += "🏆 Black wins!"; } 
+    else if (score.white > score.black) { resultStr += "🏆 White wins!"; } 
+    else { resultStr += "Draw!"; }
     endGame(resultStr);
     return;
   }
