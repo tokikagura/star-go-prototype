@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  星囲碁 / Hoshigo Prototype v1.2
+  星囲碁 / Hoshigo Prototype v1.2.1
   Concept & Design: 刻神楽 (_tokikagura)
   Implementation support: AI-assisted prototyping
   License: Prototype / private experimental build
@@ -9,10 +9,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 プロトタイプ v1.2</title>
+  <title>星囲碁 プロトタイプ v1.2.1</title>
   <style>
 /* ════════════════════════════════
-   リセット・基礎
+   リreset・基礎
 ════════════════════════════════ */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -312,7 +312,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 <body>
 <div id="app">
 
-  <div id="title-bar">★ 星囲碁 プロトタイプ v1.2</div>
+  <div id="title-bar">★ 星囲碁 プロトタイプ v1.2.1</div>
 
   <!-- 手番・状態 -->
   <div id="status-bar">準備中…</div>
@@ -1062,7 +1062,7 @@ function chooseStarUse(pick, color, moveNo) {
 
 
 // ═══════════════════════════════════════════════════════════
-//  ★ Expert CPU v1.2 - 3大矯正コア手術完了版
+//  ★ Expert CPU v1.2.1 - 3大矯正コア手術完了版
 //  ① ジグザグなみ縫い(コスミ数珠繋ぎ)自動検知累積ペナルティ
 //  ② 相手から一撃で切断・アタリにされる「分断の急所」脆弱性検知
 //  ③ 通常石で安全に生還できるアタリなら星石を温存するガードレール
@@ -1686,15 +1686,15 @@ function updateStats() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  SGF生成
+//  SGF生成・出力（v1.2.1 iOS Safariダウンロード対策パッチ適用済）
 // ═══════════════════════════════════════════════════════════
 function toSGFCoord(x, y) { return String.fromCharCode(97 + x) + String.fromCharCode(97 + y); }
 
 function buildSGF() {
   const expireLabel = ['失効なし', '空点≤25で失効', '初回パス後失効'][expireMode] || '';
   const modeLabel   = gameMode === 'human-expert' ? '人間vsExpert' : gameMode === 'human-advanced' ? '人間vsAdvanced' : 'CPU対局';
-  const rootComment = `星囲碁 / Hoshigo v1.2. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.2]C[${rootComment}]`;
+  const rootComment = `星囲碁 / Hoshigo v1.2.1. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.2.1]C[${rootComment}]`;
 
   for (const e of moveLog) {
     const playerName = e.player === BLACK ? '黒' : '白';
@@ -1737,6 +1737,40 @@ document.getElementById('btn-sgf-copy').addEventListener('click', () => {
   const sgf = buildSGF(); showSGFPreview(sgf);
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(sgf).then(() => setSGFMsg('✅ コピーしました。', false));
+  }
+});
+
+document.getElementById('btn-sgf-dl').addEventListener('click', () => {
+  if (moveLog.length === 0) { setSGFMsg('棋譜がありません。', true); return; }
+  const sgf = buildSGF();
+  showSGFPreview(sgf);
+
+  // 1. 保険としてクリップボードへ自動コピー（最悪ファイル作成が弾かれても安全）
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(sgf).catch(err => console.log("Clipboard fallback ready"));
+  }
+
+  try {
+    // 2. MIMEタイプをバイナリ（octet-stream）に強制指定してSafariのテキスト表示を回避
+    const blob = new Blob([sgf], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    
+    // 3. 仮想のaタグを作り、同期イベントのコールバック内で直接クリックを実行
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Hoshigo_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.sgf`;
+    
+    document.body.appendChild(a);
+    a.click();
+    
+    // 後片付け
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setSGFMsg('✅ ダウンロードを開始しました（クリップボードにもコピー済）。', false);
+
+  } catch (error) {
+    // 4. ガチガチのプライベートブラウズなどでファイルダウンロードが全滅した場合のフォールバック
+    setSGFMsg('🔒 Safariの制限により、代わりにクリップボードにコピーしました。そのまま貼付可能です。', false);
   }
 });
 
