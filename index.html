@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  星囲碁 / Hoshigo Prototype v1.1i_fixed
+  星囲碁 / Hoshigo Prototype v1.1
   Concept & Design: 刻神楽 (_tokikagura)
   Implementation support: AI-assisted prototyping
   License: Prototype / private experimental build
@@ -9,7 +9,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 プロトタイプ v1.1i_fixed</title>
+  <title>星囲碁 プロトタイプ v1.1</title>
   <style>
 /* ════════════════════════════════
    リセット・基礎
@@ -312,7 +312,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 <body>
 <div id="app">
 
-  <div id="title-bar">★ 星囲碁 プロトタイプ v1.1i_fixed</div>
+  <div id="title-bar">★ 星囲碁 プロトタイプ v1.1</div>
 
   <!-- 手番・状態 -->
   <div id="status-bar">準備中…</div>
@@ -627,7 +627,7 @@ function drawStone(x, y, color) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  囲碁ロジック（v0.5 から変更なし）
+//  囲碁ロジック
 // ═══════════════════════════════════════════════════════════
 function initBoard() {
   board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
@@ -743,15 +743,11 @@ function canUseStarStone(playerColor) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  Simple CPU ヘルパー関数（v1.0 強化版）
-//  ・地（陣地）候補の評価
-//  ・序盤の低線ペナルティ
-//  ・簡易3手読み: 自分 → 相手 → 自分
+//  Simple CPU ヘルパー関数
 // ═══════════════════════════════════════════════════════════
 
 function cloneBoard(brd) { return brd.map(r => [...r]); }
 
-// シミュレーション専用。星石集合を触らない純粋着手。
 function placeStonePure(brd, x, y, color, koP) {
   if (brd[y][x] !== EMPTY) return { ok: false };
   if (koP && koP.x === x && koP.y === y) return { ok: false };
@@ -851,6 +847,7 @@ function hasNearbyStoneOn(brd, x, y) {
 }
 function hasNearbyStone(x, y) { return hasNearbyStoneOn(board, x, y); }
 
+// 領域・布石定数
 function isEdge(x, y) { return x === 0 || x === SIZE - 1 || y === 0 || y === SIZE - 1; }
 function isSecondLine(x, y) { return x === 1 || x === SIZE - 2 || y === 1 || y === SIZE - 2; }
 function isCenterish(x, y) { return x >= 2 && x <= SIZE - 3 && y >= 2 && y <= SIZE - 3; }
@@ -874,15 +871,12 @@ function countAround(brd, x, y, color, radius) {
   return { own, opp, empty };
 }
 
-
-// 9路の布石感覚を少しだけ持たせるための領域評価。
-// Advanced v1.0f: 中央団子を避け、四隅・辺・未開拓エリアに足場を作る。
 function quadrantOf(x, y) {
-  if (x <= 3 && y <= 3) return 0;      // 左上
-  if (x >= 5 && y <= 3) return 1;      // 右上
-  if (x <= 3 && y >= 5) return 2;      // 左下
-  if (x >= 5 && y >= 5) return 3;      // 右下
-  return -1;                           // 中央帯
+  if (x <= 3 && y <= 3) return 0;
+  if (x >= 5 && y <= 3) return 1;
+  if (x <= 3 && y >= 5) return 2;
+  if (x >= 5 && y >= 5) return 3;
+  return -1;
 }
 
 function quadrantCounts(brd, color) {
@@ -898,12 +892,11 @@ function quadrantCounts(brd, color) {
 }
 
 function positionValue(x, y) {
-  // 9路では三々・星付近（内部 2/6）が足場として強い。
   let v = 0;
   if ((x === 2 || x === 6) && (y === 2 || y === 6)) v += 18;
   if (x === 2 || x === 6 || y === 2 || y === 6) v += 6;
   if (isEdge(x, y)) v -= 7;
-  if (x >= 3 && x <= 5 && y >= 3 && y <= 5) v -= 2; // 中央偏重を抑える
+  if (x >= 3 && x <= 5 && y >= 3 && y <= 5) v -= 2;
   return v;
 }
 
@@ -920,7 +913,6 @@ function localDensityPenalty(brd, x, y, color, moveNo) {
     if (r1.own >= 3 && r1.empty <= 3) penalty -= 30;
     if (r2.own >= 7 && r2.opp <= 1) penalty -= 26;
   } else {
-    // 終盤に自分の目や地を埋めすぎる癖を抑える。
     if (r1.own >= 3 && r1.opp === 0) penalty -= 34;
   }
   return penalty;
@@ -934,7 +926,6 @@ function openingExpansionBonus(brd, x, y, color, moveNo) {
   let score = 0;
 
   if (openingPhase(moveNo)) {
-    // 大場: 四隅・四象限へ散る。中央連打は弱める。
     if ((x === 2 || x === 6) && (y === 2 || y === 6)) score += 62;
     else if (q >= 0 && (x === 1 || x === 2 || x === 6 || x === 7) && (y === 1 || y === 2 || y === 6 || y === 7)) score += 28;
     else if (x === 2 || x === 6 || y === 2 || y === 6) score += 14;
@@ -944,10 +935,9 @@ function openingExpansionBonus(brd, x, y, color, moveNo) {
       else if (ownQ[q] === 1) score += 14;
       else if (ownQ[q] === 2) score -= 26;
       else score -= 58;
-
-      if (oppQ[q] > ownQ[q]) score += 22; // 相手だけの地区を放置しない
+      if (oppQ[q] > ownQ[q]) score += 22;
     } else {
-      score -= 22; // 序盤の中央帯集中を抑制
+      score -= 22;
     }
   } else if (middlePhase(moveNo)) {
     if (q >= 0 && ownQ[q] === 0) score += 28;
@@ -958,7 +948,6 @@ function openingExpansionBonus(brd, x, y, color, moveNo) {
 }
 
 function estimatedTerritoryScore(brd, color) {
-  // 空点ごとの周辺影響から、ざっくり地の見込みを測る。
   const opp = 1 - color;
   let score = 0;
   for (let y = 0; y < SIZE; y++) {
@@ -972,7 +961,6 @@ function estimatedTerritoryScore(brd, color) {
       else if (diff <= -3 && theirs.opp <= 1) score -= 12;
       else if (diff <= -1) score -= 4;
 
-      // 辺・隅の空点は実地になりやすい。
       if (isEdge(x, y)) {
         if (mine.own > theirs.own) score += 3;
         if (theirs.own > mine.own) score -= 3;
@@ -982,20 +970,17 @@ function estimatedTerritoryScore(brd, color) {
   return score;
 }
 
-// 空点が「自分の地の骨格」になりやすいかを評価する。
 function territoryPotential(brd, x, y, color, moveNo) {
   const r1 = countAround(brd, x, y, color, 1);
   const r2 = countAround(brd, x, y, color, 2);
   let score = 0;
 
-  // 近すぎる自石だけを高評価にしない。囲いの輪郭なら加点、団子なら別関数で減点。
   score += r1.own * 8 - r1.opp * 9;
   score += r2.own * 3 - r2.opp * 3;
   if (r1.own >= 2 && r1.opp === 0 && r1.empty >= 3) score += SCORE_TERRITORY_BASE;
   if (r2.own >= 3 && r2.opp <= 1 && r1.empty >= 2) score += 10;
   if (r1.own === 0 && r2.own === 0 && moveNo > 10) score -= 8;
 
-  // 中央は「強い」だけで「地」ではない。加点は控えめにする。
   if (isCenterish(x, y)) score += SCORE_CENTER_BONUS;
   score += positionValue(x, y);
 
@@ -1050,7 +1035,6 @@ function starThreatPenalty(brd, color, oppHasStar) {
 }
 
 function evaluateBoard(brd, color) {
-  // 必ず「color側に有利なら高得点」で返す。白番でも評価軸を反転しない。
   const opp = 1 - color;
   let score = 0;
   for (let y = 0; y < SIZE; y++) {
@@ -1104,7 +1088,6 @@ function moveHeuristicOn(brd, x, y, color, koP, moveNo) {
   const around1 = countAround(brd, x, y, color, 1);
   const around2 = countAround(brd, x, y, color, 2);
   if (openingPhase(moveNo)) {
-    // 戦術手でない限り、同じ地区に固まりすぎる手を嫌う。
     if (!tactical && around1.own >= 2 && around1.opp === 0) score -= 30;
     if (!tactical && around2.own >= 5 && around2.opp <= 1) score -= 44;
   } else {
@@ -1141,7 +1124,6 @@ function lookaheadScore(x, y, color) {
   const oppCandidates = topMoves(first, oppMoves, opp, firstResult.newKo, moveNo + 1, SIMPLE_AI_REPLY_LIMIT);
   if (oppCandidates.length === 0) return firstScore;
 
-  // 相手は「こちらの評価を最小化する」手を選ぶ。接待読みは禁止。
   let worstAfterReply = Infinity;
 
   for (const reply of oppCandidates) {
@@ -1194,13 +1176,8 @@ function chooseStarUse(pick, color, moveNo) {
   return { useStar, starColor };
 }
 
-
 // ═══════════════════════════════════════════════════════════
-//  Expert CPU v1.1i_fixed
-//  ・9路星囲碁専用の布石感覚
-//  ・空点領域の実地推定
-//  ・弱い連の救出 / 相手弱連への圧力
-//  ・Advancedより重いが、スマホでも止まりにくい浅深度探索
+//  Expert CPU v1.1
 // ═══════════════════════════════════════════════════════════
 
 function expertPhase(moveNo) {
@@ -1210,7 +1187,6 @@ function expertPhase(moveNo) {
 }
 
 function expertAnchorValue(x, y) {
-  // 9路の実戦感覚: 三々・星付近・辺の根拠を重視し、中央一点主義を避ける。
   let v = 0;
   if ((x === 2 || x === 6) && (y === 2 || y === 6)) v += 42;
   if ((x === 2 || x === 6) && (y === 3 || y === 5)) v += 20;
@@ -1283,7 +1259,6 @@ function expertGroupScore(brd, color) {
       const libs = g.liberties.size;
       const size = g.stones.length;
 
-      // v1.1: 「眼作り一辺倒」を抑える。生存評価は必要だが、勝つ評価より強くしない。
       score += size * 8 + Math.min(libs, 7) * 11;
       if (libs === 1) score -= 185 + size * 30;
       else if (libs === 2) score -= 58 + size * 8;
@@ -1297,7 +1272,6 @@ function expertGroupScore(brd, color) {
         const oppN = around.filter(([nx, ny]) => brd[ny][nx] === opp).length;
         if (ownN >= 2 && oppN === 0) eyeish++;
       });
-      // 眼は終盤ほど価値がある。序中盤の過剰な内側補強は避ける。
       if (eyeish >= 2) score += 24;
       else if (eyeish === 1) score += 6;
     }
@@ -1315,7 +1289,6 @@ function expertTerritoryMoveShape(brd, x, y, color, moveNo) {
 
   score += expertAnchorValue(x, y);
 
-  // 自石密集の団子を強く嫌う。戦術手なら別途加点されるので、形の悪さだけ見る。
   if (r1.own >= 3 && r1.opp === 0) score -= 72;
   if (r2.own >= 6 && r2.opp <= 1) score -= 66;
   if (phase === 'opening') {
@@ -1334,12 +1307,10 @@ function expertTerritoryMoveShape(brd, x, y, color, moveNo) {
     if (isSecondLine(x, y) && r1.opp === 0) score -= 16;
   }
 
-  // 囲う輪郭は評価、地を自分で埋めるだけの手は減点。
   if (r1.own >= 2 && r1.opp === 0 && r1.empty >= 3) score += 30;
   if (r2.own >= 3 && r2.opp <= 1 && r1.empty >= 2) score += 18;
   if (phase === 'endgame' && r1.own >= 3 && r1.opp === 0 && r1.empty <= 2) score -= 50;
 
-  // 相手の根拠に近い大場や消しは評価。
   if (enemy1.opp >= 1 && r1.own >= 1) score += 22;
   if (r2.opp >= 4 && r2.own <= 1) score += 30;
   return score;
@@ -1367,10 +1338,7 @@ function expertEvaluateBoard(brd, color) {
   return score;
 }
 
-
 function expertAreaBalance(brd, color) {
-  // v1.1: プレイアウト最終局面を「石数＋地の見込み」で雑に測る。
-  // 完全な地合い計算ではないが、眼作りだけに寄る癖を弱める。
   const opp = 1 - color;
   let score = 0;
   for (let y = 0; y < SIZE; y++) {
@@ -1393,7 +1361,6 @@ function expertAreaBalance(brd, color) {
 }
 
 function expertAttackBonus(brd, x, y, color) {
-  // 隣接・近接する相手の弱い連を攻める。守り過ぎExpertを矯正するための攻撃評価。
   const opp = 1 - color;
   let score = 0;
   const seen = new Set();
@@ -1416,7 +1383,6 @@ function expertAttackBonus(brd, x, y, color) {
 }
 
 function expertOwnTerritoryFillPenalty(brd, x, y, color, moveNo, tactical) {
-  // 自分の地や眼の内側を早く埋める手を嫌う。ただし捕獲・アタリ救出なら許す。
   if (tactical) return 0;
   const r1 = countAround(brd, x, y, color, 1);
   const r2 = countAround(brd, x, y, color, 2);
@@ -1461,15 +1427,12 @@ function choosePlayoutMove(brd, legal, color, koP, rootColor, ply) {
     return { x, y };
   }
   const k = Math.min(EXPERT_MCTS_TOP_K, scored.length);
-  // 上位から少しランダムに選ぶ。完全貪欲だと同じ循環に吸われる。
   const r = Math.random();
   const idx = r < 0.58 ? 0 : r < 0.82 ? Math.min(1, k - 1) : Math.floor(Math.random() * k);
   return scored[idx];
 }
 
 function expertMonteCarloScore(x, y, color) {
-  // v1.1: Expert専用の軽量MCTS風プレイアウト。
-  // 本格MCTSではないが、「今の形が最終的に地になるか」を少しだけ未来で転がす。
   const first = cloneBoard(board);
   const firstResult = placeStonePure(first, x, y, color, koPoint);
   if (!firstResult.ok) return -Infinity;
@@ -1511,10 +1474,7 @@ function expertMonteCarloScore(x, y, color) {
   return total / EXPERT_MCTS_PLAYOUTS;
 }
 
-
 function recentCoordinatePenalty(x, y, color) {
-  // 直近の取り返し・反復地点に吸い寄せられる癖を抑える。
-  // 捕獲で空いた点への再着手自体は合法なので、禁止ではなく減点に留める。
   let penalty = 0;
   const lookback = Math.min(moveLog.length, 16);
   for (let i = 0; i < lookback; i++) {
@@ -1525,8 +1485,6 @@ function recentCoordinatePenalty(x, y, color) {
     if (dist === 0) penalty -= 34 * weight;
     else if (dist === 1) penalty -= 5 * Math.max(1, 5 - i * 0.3);
   }
-
-  // 直近2手の同一点・隣接地点へ戻る「ぐるぐる」を特に嫌う。
   const lastPlaces = moveLog.filter(e => e && e.type === 'place').slice(-4);
   for (const e of lastPlaces) {
     if (e.x === x && e.y === y) penalty -= 95;
@@ -1562,7 +1520,6 @@ function expertMoveHeuristicOn(brd, x, y, color, koP, moveNo, checkReplies = tru
   score += expertOwnTerritoryFillPenalty(brd, x, y, color, moveNo, tactical);
   score += expertEvaluateBoard(tmp, color) * 0.18;
 
-  // v1.1: 相手の痛い応手は見る。ただし再帰しない浅い候補で止める。
   if (checkReplies) {
     const oppMoves = getLegalMovesPure(tmp, opp, result.newKo);
     const sharpReplies = topExpertMoves(tmp, oppMoves, opp, result.newKo, moveNo + 1, Math.min(4, EXPERT_AI_REPLY_LIMIT));
@@ -1621,6 +1578,7 @@ function expertLookaheadScore(x, y, color) {
       }
       if (bestRescue > -Infinity) afterReplyScore = afterReplyScore * 0.42 + bestRescue * 0.58;
     }
+    // 🔍 【バグ修正】worstAfterReply < worstAfterReply から afterReplyScore < worstAfterReply へ修正
     if (afterReplyScore < worstAfterReply) worstAfterReply = afterReplyScore;
   }
   if (worstAfterReply === Infinity) return firstScore;
@@ -1655,8 +1613,8 @@ function chooseExpertStarUse(pick, color, moveNo) {
   if (oppAtari.has(`${pick.x},${pick.y}`)) starScore += 52;
   const r1 = countAround(board, pick.x, pick.y, color, 1);
   const r2 = countAround(board, pick.x, pick.y, color, 2);
-  if (r1.opp >= 2 && r1.own >= 1) starScore += 42; // 切断・競り合い
-  if (r2.opp >= 4 && r2.own <= 2) starScore += 30; // 消し
+  if (r1.opp >= 2 && r1.own >= 1) starScore += 42;
+  if (r2.opp >= 4 && r2.own <= 2) starScore += 30;
   if (pick.score >= 260) starScore += 20;
   if (starScore >= 78) useStar = true;
   return { useStar, starColor };
@@ -1673,8 +1631,8 @@ function isValidDecisionForCurrentBoard(decision, color) {
   return placeStonePure(tmp, decision.x, decision.y, stoneColor, koPoint).ok;
 }
 
+// どのAI評価が壊れても、絶対にパスへ落とさない最後の網
 function fallbackLegalDecision(legalMoves, color, moveNo) {
-  // どのAI評価が壊れても、合法手がある限り絶対にパスへ落とさない最後の網。
   let best = null;
   for (const [x, y] of legalMoves) {
     let score = 0;
@@ -1712,7 +1670,6 @@ function expertAI(legalMoves, color) {
     const safeReading = Number.isFinite(reading) ? reading : -999999;
     const safeMC = Number.isFinite(mc) ? mc : -999999;
 
-    // v1.1: 眼・呼吸点だけの静的評価に寄りすぎないよう、軽量プレイアウトを混ぜる。
     let score = m.score * 0.34 + safeReading * 0.36 + safeMC * 0.30;
     score += recentCoordinatePenalty(m.x, m.y, color) * 0.35;
     if (book && m.x === book.x && m.y === book.y) score += 44;
@@ -1723,7 +1680,6 @@ function expertAI(legalMoves, color) {
   const star = chooseExpertStarUse(rawPick, color, moveNo);
   let decision = { x: rawPick.x, y: rawPick.y, useStar: star.useStar, starColor: star.starColor };
 
-  // 星石色での自殺・コウなどを避ける。星石が危険なら通常手に降格する。
   if (!isValidDecisionForCurrentBoard(decision, color)) {
     decision = { x: rawPick.x, y: rawPick.y, useStar: false, starColor: color };
   }
@@ -1755,13 +1711,11 @@ function advancedAI(legalMoves, color) {
     return { x: m.x, y: m.y, score, baseScore: m.score, reading: safeReading };
   }).filter(m => Number.isFinite(m.score)).sort((a, b) => b.score - a.score);
 
-  // 合法手がある限り絶対にパスしない。全評価が壊れても先頭合法手を打つ。
   const pick = scored[0] || { x: legalMoves[0][0], y: legalMoves[0][1], score: 0 };
   const star = chooseStarUse(pick, color, moveNo);
   return { x: pick.x, y: pick.y, useStar: star.useStar, starColor: star.starColor };
 }
 
-// 後方互換: 既存の呼び出しが残っていてもAdvancedとして動かす。
 function simpleAI(legalMoves, color) { return advancedAI(legalMoves, color); }
 
 function aiForCurrentColor() {
@@ -1800,7 +1754,6 @@ function cpuTurn() {
     decision = fallbackLegalDecision(legal, color, moveNo);
   }
 
-  // ここでもう一度確認。合法手がある限り、CPUはパスではなく最善風フォールバックを打つ。
   if (!isValidDecisionForCurrentBoard(decision, color)) {
     const [x, y] = legal[0];
     decision = { x, y, useStar: false, starColor: color };
@@ -1834,7 +1787,6 @@ function updateStarPanel() {
   const badge = document.getElementById('star-human');
   const label = document.getElementById('star-human-label');
 
-  // 星石パネルは人間が参加するモードのみ表示
   const humanPlaying = gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic';
   if (!humanPlaying) {
     panel.style.display = 'none';
@@ -1862,7 +1814,6 @@ function updateStarPanel() {
   }
 }
 
-// CPU vs CPU の難易度セレクト表示制御
 function updateModeUI() {
   const mode = document.getElementById('sel-mode').value;
   const rowCpuLevel  = document.getElementById('row-cpu-level');
@@ -1881,15 +1832,11 @@ function updateStats() {
 // ═══════════════════════════════════════════════════════════
 //  SGF生成・出力
 // ═══════════════════════════════════════════════════════════
-
-// 内部座標 (x, y) → SGF座標文字列 "aa"〜"ii"
-// 内部: x=0,y=0 = 盤面左上 (A9) = SGF aa
 function toSGFCoord(x, y) {
   return String.fromCharCode(97 + x) + String.fromCharCode(97 + y);
 }
 
 function buildSGF() {
-  // ── ルートノード ──
   const expireLabel = ['失効なし', '空点≤25で失効', '初回パス後失効'][expireMode] || '';
   const modeLabel   = gameMode === 'human-expert' ? '人間vsExpert'
                     : gameMode === 'human-advanced' ? '人間vsAdvanced'
@@ -1908,44 +1855,31 @@ function buildSGF() {
     'SGF export prioritizes board reproduction. ' +
     `Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
 
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.1i_fixed]C[${rootComment}]`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.1]C[${rootComment}]`;
 
-  // ── 手順ノード ──
   for (const e of moveLog) {
     const playerName = e.player === BLACK ? '黒' : '白';
-
     if (e.type === 'pass') {
-      // パス: B[] or W[] （空座標がSGF標準のパス表記）
       const token = e.player === BLACK ? 'B' : 'W';
       sgf += `;${token}[]C[${playerName} パス]`;
-
     } else if (e.type === 'resign') {
-      // 投了はSGF標準のノードなし。コメントのみ末尾に付記
-      // ルートに結果を追記したいが、既存ノードは変更済みなので
-      // 最終ノードとして空パスで記録する
       const token = e.player === BLACK ? 'B' : 'W';
       sgf += `;${token}[]C[${playerName} 投了]`;
-
     } else {
-      // 通常着手 / 星石着手
-      // 盤面再現を優先: 置かれた石色でB/Wを決める
       const stoneColor = e.isStar ? e.starColor : e.player;
       const token      = stoneColor === BLACK ? 'B' : 'W';
       const coord      = toSGFCoord(e.x, e.y);
 
       if (e.isStar) {
-        // 星石: 手番と石色のズレをコメントに記録
         const actualTurn  = playerName;
         const placedColor = e.starColor === BLACK ? '黒' : '白';
         const comment     = `星石使用: 実際の手番=${actualTurn} / 置いた石色=${placedColor}`;
         sgf += `;${token}[${coord}]C[${comment}]`;
       } else {
-        // 通常手: コメントなし
         sgf += `;${token}[${coord}]`;
       }
     }
   }
-
   sgf += ')';
   return sgf;
 }
@@ -1957,7 +1891,6 @@ function setSGFMsg(msg, isError) {
   el.style.color = isError ? '#f66' : '#80c080';
 }
 
-// textarea にSGF本文を流し込み表示する
 function showSGFPreview(sgf) {
   const ta = document.getElementById('sgf-preview');
   if (!ta) return;
@@ -1965,15 +1898,12 @@ function showSGFPreview(sgf) {
   ta.classList.add('visible');
 }
 
-// iOS Safari かどうかの判定
 function isIOSSafari() {
   return /iP(hone|od|ad)/.test(navigator.userAgent) &&
          /WebKit/.test(navigator.userAgent) &&
          !/CriOS|FxiOS|OPiOS/.test(navigator.userAgent);
 }
 
-// ── 「SGFを生成」ボタン ──
-// テキストエリアにSGFを表示するだけ。コピーもDLもしない。
 document.getElementById('btn-sgf-gen').addEventListener('click', () => {
   if (moveLog.length === 0) {
     setSGFMsg('棋譜がありません。対局を開始してください。', true);
@@ -1984,14 +1914,13 @@ document.getElementById('btn-sgf-gen').addEventListener('click', () => {
   setSGFMsg('SGFを生成しました。下のテキストを長押しで全選択→コピーできます。', false);
 });
 
-// ── 「SGFをコピー」ボタン ──
 document.getElementById('btn-sgf-copy').addEventListener('click', () => {
   if (moveLog.length === 0) {
     setSGFMsg('棋譜がありません。対局を開始してください。', true);
     return;
   }
   const sgf = buildSGF();
-  showSGFPreview(sgf);   // 先にtextareaに流し込む（コピー失敗時の手動コピー用）
+  showSGFPreview(sgf);
 
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(sgf)
@@ -2002,9 +1931,7 @@ document.getElementById('btn-sgf-copy').addEventListener('click', () => {
   }
 });
 
-// execCommand フォールバック（iOS含む古い環境向け）
 function fallbackCopy(text) {
-  // textareaが既に表示されていればそこから選択を試みる
   const preview = document.getElementById('sgf-preview');
   if (preview && preview.classList.contains('visible')) {
     try {
@@ -2015,9 +1942,8 @@ function fallbackCopy(text) {
         setSGFMsg('✅ SGFをコピーしました。', false);
         return;
       }
-    } catch(e) { /* fall through */ }
+    } catch(e) {}
   }
-  // 画面内に不可視textareaを作って試みる
   try {
     const ta = document.createElement('textarea');
     ta.value     = text;
@@ -2040,14 +1966,13 @@ function fallbackCopy(text) {
   }
 }
 
-// ── 「SGFをダウンロード」ボタン ──
 document.getElementById('btn-sgf-dl').addEventListener('click', () => {
   if (moveLog.length === 0) {
     setSGFMsg('棋譜がありません。対局を開始してください。', true);
     return;
   }
   const sgf = buildSGF();
-  showSGFPreview(sgf);   // 先にtextareaを表示（DL失敗時の手動コピー用）
+  showSGFPreview(sgf);
 
   const now = new Date();
   const ts  = now.getFullYear()
@@ -2058,27 +1983,17 @@ document.getElementById('btn-sgf-dl').addEventListener('click', () => {
     + ('0' + now.getMinutes()).slice(-2);
   const filename = `hoshigo_${ts}.sgf`;
 
-  // iOS Safari は <a download> を無視するため、別アプローチを先に試みる
   if (isIOSSafari()) {
-    // iOS: data: URI を新しいタブで開く（「ファイルに保存」から保存可能）
     try {
       const dataUri = 'data:application/x-go-sgf;charset=utf-8,' + encodeURIComponent(sgf);
       window.open(dataUri, '_blank');
-      setSGFMsg(
-        'SGFを生成しました。新しいタブが開いたら「共有」→「ファイルに保存」で保存できます。' +
-        '保存できない場合は下のSGF本文を長押しでコピーしてください。',
-        false
-      );
+      setSGFMsg('SGFを生成しました。新しいタブが開いたら「共有」→「ファイルに保存」で保存できます。', false);
     } catch(e) {
-      setSGFMsg(
-        '新しいタブを開けませんでした。下のSGF本文を長押しでコピーしてください。',
-        true
-      );
+      setSGFMsg('新しいタブを開けませんでした。下のSGF本文を長押しでコピーしてください。', true);
     }
     return;
   }
 
-  // 非iOS: Blob + a.download
   try {
     const blob = new Blob([sgf], { type: 'application/x-go-sgf' });
     const url  = URL.createObjectURL(blob);
@@ -2088,24 +2003,16 @@ document.getElementById('btn-sgf-dl').addEventListener('click', () => {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    // revokeObjectURL は即時呼び出しを避け、ダウンロード開始を待つ
     setTimeout(() => URL.revokeObjectURL(url), 10000);
-    setSGFMsg(
-      `SGFを生成しました（${filename}）。保存できない場合は下のSGF本文をコピーしてください。`,
-      false
-    );
+    setSGFMsg(`SGFを生成しました（${filename}）。`, false);
   } catch(e) {
-    setSGFMsg(
-      'ダウンロードに失敗しました。下のSGF本文を長押しでコピーしてください。',
-      true
-    );
+    setSGFMsg('ダウンロードに失敗しました。下のSGF本文を長押しでコピーしてください。', true);
   }
 });
 
 // ═══════════════════════════════════════════════════════════
 //  棋譜ログ表示
 // ═══════════════════════════════════════════════════════════
-
 function renderLog() {
   const el = document.getElementById('move-log');
   el.innerHTML = moveLog.map(e => {
@@ -2141,7 +2048,7 @@ function addLog(entry) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  着手処理（人間・CPU 共用）
+//  着手処理
 // ═══════════════════════════════════════════════════════════
 function doMove(x, y, isStar, starColor) {
   const stoneColor = isStar ? starColor : current;
@@ -2261,13 +2168,12 @@ function startGame() {
       cpuTurn();
     }, 500);
   } else if ((gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic') && humanColor === WHITE) {
-    // 人間が白 → CPU(黒)から始める
     cpuTimeout = setTimeout(cpuTurn, 300);
   }
 }
 
 // ═══════════════════════════════════════════════════════════
-//  Canvas イベント（クリック / タッチ）
+//  Canvas イベント
 // ═══════════════════════════════════════════════════════════
 function screenToBoard(clientX, clientY) {
   const rect   = canvas.getBoundingClientRect();
@@ -2318,7 +2224,7 @@ canvas.addEventListener('mousemove', e => {
 canvas.addEventListener('mouseleave', drawBoard);
 
 // ═══════════════════════════════════════════════════════════
-//  星石ボタン（人間用）
+//  星石ボタン
 // ═══════════════════════════════════════════════════════════
 function showPicker() {
   document.getElementById('overlay').classList.add('visible');
@@ -2385,7 +2291,6 @@ document.getElementById('btn-resign').addEventListener('click', () => {
 document.getElementById('btn-reset').addEventListener('click', startGame);
 document.getElementById('btn-start').addEventListener('click', startGame);
 
-// ── モード変更時の UI 更新 ──
 document.getElementById('sel-mode').addEventListener('change', updateModeUI);
 
 // ═══════════════════════════════════════════════════════════
@@ -2407,7 +2312,7 @@ startGame();
 } catch(initErr) {
   showFatalError(initErr.message || String(initErr));
 }
-}); // DOMContentLoaded
+});
 </script>
 </body>
 </html>
