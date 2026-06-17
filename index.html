@@ -1,17 +1,9 @@
 <!DOCTYPE html>
-<!--
-  星囲碁 / Hoshi Go Prototype v1.3.1
-  Concept & Design: 刻神楽 (_tokikagura)
-  Implementation support: AI-assisted prototyping
-  License: Custom Experimental License (All Rights Reserved)
-  - You are welcome to study, play, and modify this code for personal/educational experiments.
-  - If you forge a cool mod or branch out, please drop me a line! Twitter: @_tokikagura
--->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 | Hoshi Go Prototype v1.3.1</title>
+  <title>星囲碁 | Hoshi Go Prototype v1.4.1</title>
   <style>
 /* ════════════════════════════════
    Reset & Base
@@ -314,17 +306,14 @@ label { font-size: 0.82rem; cursor: pointer; }
 <body>
 <div id="app">
 
-  <div id="title-bar">★ 星囲碁 | Hoshi Go v1.3.1</div>
+  <div id="title-bar">★ 星囲碁 | Hoshi Go v1.4.1</div>
 
-  <!-- Game Status -->
   <div id="status-bar">Initializing...</div>
 
-  <!-- Board Wrap -->
   <div id="board-wrap">
     <canvas id="board-canvas"></canvas>
   </div>
 
-  <!-- Star Stone Panel -->
   <div id="star-panel">
     <div class="star-row">
       <span class="star-badge" id="star-human" title="Use Star Stone">★</span>
@@ -332,14 +321,12 @@ label { font-size: 0.82rem; cursor: pointer; }
     </div>
   </div>
 
-  <!-- Action Buttons -->
   <div id="main-btns">
     <button class="action" id="btn-pass">Pass</button>
     <button class="action danger" id="btn-resign">Resign</button>
     <button class="action" id="btn-reset">Reset</button>
   </div>
 
-  <!-- Collapsible Details Section -->
   <div id="detail-section">
 
     <button id="btn-detail-toggle">
@@ -349,7 +336,6 @@ label { font-size: 0.82rem; cursor: pointer; }
 
     <div id="detail-content">
 
-      <!-- Game Mode Settings -->
       <div class="card">
         <h2>Game Mode</h2>
         <div class="setting-row">
@@ -377,7 +363,6 @@ label { font-size: 0.82rem; cursor: pointer; }
         </div>
       </div>
 
-      <!-- Star Stone Expiry Rule -->
       <div class="card">
         <h2>Star Stone Expiry</h2>
         <div class="setting-row">
@@ -394,7 +379,6 @@ label { font-size: 0.82rem; cursor: pointer; }
         </div>
       </div>
 
-      <!-- Game Stats -->
       <div class="card">
         <h2>Statistics</h2>
         <div id="stats-grid">
@@ -405,13 +389,11 @@ label { font-size: 0.82rem; cursor: pointer; }
         </div>
       </div>
 
-      <!-- Move Log -->
       <div class="card">
         <h2>Move Log</h2>
         <div id="move-log"></div>
       </div>
 
-      <!-- SGF Export Panel -->
       <div class="card">
         <h2>SGF Export</h2>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -425,13 +407,7 @@ label { font-size: 0.82rem; cursor: pointer; }
         ></textarea>
       </div>
 
-    </div><!-- /detail-content -->
-  </div><!-- /detail-section -->
-
-</div><!-- /app -->
-
-<!-- Star Picker Popup -->
-<div id="overlay"></div>
+    </div></div></div><div id="overlay"></div>
 <div id="star-picker">
   <p>★ Select Star Stone Color</p>
   <div class="pick-row">
@@ -498,8 +474,10 @@ const SIMPLE_AI_RESCUE_LIMIT = 4;
 const EXPERT_AI_CANDIDATES = 12;
 const EXPERT_AI_REPLY_LIMIT = 7;
 const EXPERT_AI_RESCUE_LIMIT = 4;
-const EXPERT_MCTS_PLAYOUTS = 6;
-const EXPERT_MCTS_DEPTH = 36;
+
+// MCTS Search parameters tuned down for heavy mobile performance
+const EXPERT_MCTS_PLAYOUTS = 4; 
+const EXPERT_MCTS_DEPTH = 24;
 const EXPERT_MCTS_TOP_K = 5;
 
 // ═══════════════════════════════════════════════════════════
@@ -519,6 +497,7 @@ let board    = [];
 let current  = BLACK;
 let koPoint  = null;
 let gameOver = false;
+let lastMove = null; 
 
 let starStones = new Set();
 let starUsed   = [false, false];
@@ -539,6 +518,49 @@ let expireMode = 0;
 
 let cpuTimer = null;
 let cpuTimeout = null;
+
+// Pure Web Audio API Generator Subroutine
+let audioCtx = null;
+function playStoneSound(color, isStar) {
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    
+    const now = audioCtx.currentTime;
+    
+    if (isStar) {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(587.33, now); 
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.12); 
+      gain.gain.setValueAtTime(0.18, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      osc.start(now);
+      osc.stop(now + 0.6);
+    } else {
+      osc.type = 'sine';
+      const baseFreq = (color === BLACK) ? 210 : 270;
+      osc.frequency.setValueAtTime(baseFreq, now);
+      osc.frequency.exponentialRampToValueAtTime(55, now + 0.07);
+      
+      gain.gain.setValueAtTime(0.28, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+      
+      osc.start(now);
+      osc.stop(now + 0.07);
+    }
+  } catch (e) {
+    console.log("Audio presentation blocked or unsupported:", e);
+  }
+}
 
 // ═══════════════════════════════════════════════════════════
 //  Drawing System
@@ -581,6 +603,19 @@ function drawBoard() {
   for (let y = 0; y < SIZE; y++)
     for (let x = 0; x < SIZE; x++)
       if (board[y][x] !== EMPTY) drawStone(x, y, board[y][x]);
+
+  // Last Move Indicator Overlay
+  if (lastMove && board[lastMove.y][lastMove.x] !== EMPTY) {
+    const lx = MARGIN + lastMove.x * CELL;
+    const ly = MARGIN + lastMove.y * CELL;
+    ctx.beginPath();
+    ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#ff3333';
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 
   if (koPoint) {
     const kx = MARGIN + koPoint.x * CELL;
@@ -775,6 +810,9 @@ function placeStonePure(brd, x, y, color, koP) {
   return { ok: true, captured, newKo };
 }
 
+// ═══════════════════════════════════════════════════════════
+//  Heuristics Engine
+// ═══════════════════════════════════════════════════════════
 function isLegalPure(brd, x, y, color, koP) {
   if (brd[y][x] !== EMPTY) return false;
   if (koP && koP.x === x && koP.y === y) return false;
@@ -934,6 +972,50 @@ function territoryPotential(brd, x, y, color, moveNo) {
   return score;
 }
 
+// Global Territory & Area BFS Counter Subroutine
+function calculateFinalScore() {
+  let blackPoints = 0;
+  let whitePoints = 0;
+  const visited = Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
+
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if (board[y][x] === BLACK) {
+        blackPoints++;
+      } else if (board[y][x] === WHITE) {
+        whitePoints++;
+      } else if (!visited[y][x]) {
+        const queue = [[x, y]];
+        const region = [[x, y]];
+        visited[y][x] = true;
+        const borders = new Set();
+
+        let head = 0;
+        while (head < queue.length) {
+          const [cx, cy] = queue[head++];
+          for (const [nx, ny] of neighbors(cx, cy)) {
+            if (board[ny][nx] === EMPTY) {
+              if (!visited[ny][nx]) {
+                visited[ny][nx] = true;
+                queue.push([nx, ny]);
+                region.push([nx, ny]);
+              }
+            } else {
+              borders.add(board[ny][nx]);
+            }
+          }
+        }
+
+        if (borders.size === 1) {
+          if (borders.has(BLACK)) blackPoints += region.length;
+          if (borders.has(WHITE)) whitePoints += region.length;
+        }
+      }
+    }
+  }
+  return { black: blackPoints, white: whitePoints };
+}
+
 function groupLibertyScore(brd, color) {
   let score = 0;
   const visited = new Set();
@@ -1004,7 +1086,7 @@ function topMoves(brd, moves, color, koP, moveNo, limit) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  MCTS Search & Lookahead
+//  MCTS Search & Lookahead Subroutines
 // ═══════════════════════════════════════════════════════════
 function lookaheadScore(x, y, color) {
   const opp = 1 - color;
@@ -1067,11 +1149,7 @@ function chooseStarUse(pick, color, moveNo) {
 
 
 // ═══════════════════════════════════════════════════════════
-//  ★ Expert CPU v1.3.1 - Core Enhancements Added
-//  ① Automatic Diagonal-Chain (Kosumi Defect) Tracking & Penalization
-//  ② Cut/Atari Vulnerability Point Pre-computation Safeguards
-//  ③ Gatekeeper Subroutine for Star Stone Conservation on Normal Escapes
-//  ④ Anti-Zombie Subroutine: Prevents meaningless invasion when crushed
+//  ★ Expert CPU Core v1.4.1 Brain Subroutines
 // ═══════════════════════════════════════════════════════════
 
 function expertPhase(moveNo) {
@@ -1377,7 +1455,6 @@ function expertMoveHeuristicOn(brd, x, y, color, koP, moveNo, checkReplies = tru
   let score = 0;
 
   score += recentCoordinatePenalty(x, y, color);
-  const tactical = result.captured.length > 0 || atariPoints.has(`${x},${y}`) || oppAtari.has(`${x},${y}`);
   
   if (result.captured.length > 0) score += 450 + result.captured.length * 60; 
   if (atariPoints.has(`${x},${y}`)) score += 360; 
@@ -1607,9 +1684,7 @@ function cpuTurn() {
   const ai = aiForCurrentColor();
   if (ai === 'human') return;
 
-  // ─── 【v1.3.1 パッチ】 ゾンビ地荒らし防止ガードレール（大人の引き際） ───
-  // 大石が取られて盤上に自分の石がほとんど残っておらず（4個以下）、かつ形勢が壊滅的な場合、
-  // 敵の確定地を荒らす見苦しい手を打つ前に、潔く「投了（Resign）」を選んで美しく終局させる。
+  // Anti-Zombie Subroutine: Prevents meaningless invasion when utterly crushed
   if (ai === 'expert' && totalMoves > 12) {
     let myStones = 0;
     for (let y = 0; y < SIZE; y++) {
@@ -1657,7 +1732,7 @@ function cpuTurn() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  UI Updates
+//  UI Presentation Updates
 // ═══════════════════════════════════════════════════════════
 const COLS = 'ABCDEFGHJ';
 function coordStr(x, y) { return COLS[x] + (SIZE - y); }
@@ -1703,15 +1778,15 @@ function updateStats() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  SGF Generation & Anti-Safari Safe Exporting
+//  SGF System & Custom Anti-Safari MIME Safe Exporting
 // ═══════════════════════════════════════════════════════════
 function toSGFCoord(x, y) { return String.fromCharCode(97 + x) + String.fromCharCode(97 + y); }
 
 function buildSGF() {
   const expireLabel = ['No Expiry', 'Locked at Empty<=25', 'Locked after Pass'][expireMode] || '';
   const modeLabel   = gameMode === 'human-expert' ? 'Human vs Expert' : gameMode === 'human-advanced' ? 'Human vs Advanced' : gameMode === 'human-classic' ? 'Human vs Classic' : 'CPU Match';
-  const rootComment = `星囲碁 / Hoshi Go v1.3.1. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.3.1]C[${rootComment}]`;
+  const rootComment = `星囲碁 / Hoshi Go v1.4.1. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.4.1]C[${rootComment}]`;
 
   for (const e of moveLog) {
     const playerName = e.player === BLACK ? 'Black' : 'White';
@@ -1787,7 +1862,7 @@ document.getElementById('btn-sgf-dl').addEventListener('click', () => {
 });
 
 // ═══════════════════════════════════════════════════════════
-//  Move Handlers & Loop Engine
+//  Move Handlers & Main Loop Engine
 // ═══════════════════════════════════════════════════════════
 function renderLog() {
   const el = document.getElementById('move-log');
@@ -1820,10 +1895,13 @@ function doMove(x, y, isStar, starColor) {
 
   koPoint = result.newKo || null;
   totalMoves++; consecutivePasses = 0;
+  lastMove = { x, y }; 
   if (isStar) { starUsed[current] = true; starMoveNo[current] = totalMoves; }
 
   moveLog.push({ moveNo: totalMoves, player: current, type: 'place', x, y, isStar, starColor: isStar ? starColor : null, captured: result.captured });
   renderLog(); updateStats();
+
+  playStoneSound(stoneColor, isStar); 
 
   current          = 1 - current;
   starPending      = false;
@@ -1839,7 +1917,22 @@ function doPass() {
   firstPassDone = true; starPending = false; pendingStarColor = null; koPoint = null;
   moveLog.push({ moveNo: totalMoves, player: current, type: 'pass' });
   renderLog(); updateStats();
-  if (consecutivePasses >= 2) { endGame('Both players passed'); return; }
+  
+  // Both passed triggered: Auto Score Aggregator Engine
+  if (consecutivePasses >= 2) {
+    const score = calculateFinalScore();
+    let resultStr = `Both passed (Black: ${score.black} | White: ${score.white}). `;
+    if (score.black > score.white) {
+      resultStr += "🏆 Black wins!";
+    } else if (score.white > score.black) {
+      resultStr += "🏆 White wins!";
+    } else {
+      resultStr += "Draw!";
+    }
+    endGame(resultStr);
+    return;
+  }
+  
   current = 1 - current;
   drawBoard(); updateStarPanel(); setStatus(currentPlayerLabel());
 }
@@ -1867,7 +1960,7 @@ function startGame() {
   expireMode = parseInt(document.querySelector('input[name=expire]:checked').value);
 
   initBoard();
-  current = BLACK; koPoint = null; gameOver = false;
+  current = BLACK; koPoint = null; gameOver = false; lastMove = null; 
   starUsed = [false, false]; starMoveNo = [null, null]; starPending = false; pendingStarColor = null;
   totalMoves = 0; passCnt = 0; consecutivePasses = 0; firstPassDone = false; moveLog = [];
 
