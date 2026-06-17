@@ -480,16 +480,22 @@ const BLACK = 0;
 const WHITE = 1;
 const EMPTY = -1;
 
-// ─── スコア定数（Simple CPU） ───
-const SCORE_CAPTURE      = 100;  // 相手石を取れる
-const SCORE_ESCAPE_ATARI =  80;  // 自分のアタリを救う
-const SCORE_NEAR_STONE   =  10;  // 隣接に石がある
-const SCORE_NEAR_STONE2  =   5;  // 2手先に石がある
-const SCORE_EDGE_PENALTY = -20;  // 1線（端）
-const SCORE_JITTER       =  15;  // ランダム揺らぎの最大値
-const SIMPLE_STAR_MIN_MOVE = 10; // 星石を使い始める最低手数
-const SCORE_STAR_NEAR_OPP  = 30; // 星石: 相手石の隣
-const SCORE_STAR_NEAR_ATARI= 30; // 星石: 自分のアタリ連の隣
+// ─── スコア定数（Simple CPU / v1.0 強化版） ───
+const SCORE_CAPTURE        = 130;  // 相手石を取れる
+const SCORE_ESCAPE_ATARI   = 110;  // 自分のアタリを救う
+const SCORE_NEAR_STONE     =  14;  // 隣接に石がある
+const SCORE_NEAR_STONE2    =   7;  // 2手先に石がある
+const SCORE_EDGE_PENALTY   = -35;  // 1線（端）
+const SCORE_SECOND_LINE_OPENING_PENALTY = -22; // 序盤の2線ペナルティ
+const SCORE_TERRITORY_BASE =  18;  // 地を囲いやすい空点
+const SCORE_CENTER_BONUS   =  16;  // 中央〜やや内側
+const SCORE_JITTER         =   8;  // ランダム揺らぎの最大値
+const SIMPLE_STAR_MIN_MOVE = 10;   // 星石を使い始める最低手数
+const SCORE_STAR_NEAR_OPP  = 30;   // 星石: 相手石の隣
+const SCORE_STAR_NEAR_ATARI= 30;   // 星石: 自分のアタリ連の隣
+const SIMPLE_AI_CANDIDATES = 14;   // 先読み対象にする候補手数
+const SIMPLE_AI_REPLY_LIMIT = 8;   // 相手応手の候補数
+const SIMPLE_AI_RESCUE_LIMIT = 5;  // 3手目の候補数
 
 // ═══════════════════════════════════════════════════════════
 //  Canvas セットアップ
@@ -732,38 +738,87 @@ function canUseStarStone(playerColor) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  Simple CPU ヘルパー関数
+//  Simple CPU ヘルパー関数（v1.0 強化版）
+//  ・地（陣地）候補の評価
+//  ・序盤の低線ペナルティ
+//  ・簡易3手読み: 自分 → 相手 → 自分
 // ═══════════════════════════════════════════════════════════
 
-// その手で取れる相手石の数を返す（盤を変更しない）
+function cloneBoard(brd) { return brd.map(r => [...r]); }
+
+// シミュレーション専用。星石集合を触らない純粋着手。
+function placeStonePure(brd, x, y, color, koP) {
+  if (brd[y][x] !== EMPTY) return { ok: false };
+  if (koP && koP.x === x && koP.y === y) return { ok: false };
+
+  brd[y][x] = color;
+  const opp = 1 - color;
+  const captured = [];
+
+  for (const [nx, ny] of neighbors(x, y)) {
+    if (brd[ny][nx] === opp) {
+      const g = getGroup(brd, nx, ny);
+      if (g.liberties.size === 0) {
+        for (const [sx, sy] of g.stones) {
+          brd[sy][sx] = EMPTY;
+          captured.push([sx, sy]);
+        }
+      }
+    }
+  }
+
+  const self = getGroup(brd, x, y);
+  if (self.liberties.size === 0) {
+    brd[y][x] = EMPTY;
+    for (const [sx, sy] of captured) brd[sy][sx] = opp;
+    return { ok: false };
+  }
+
+  let newKo = null;
+  if (captured.length === 1 && self.stones.length === 1) {
+    newKo = { x: captured[0][0], y: captured[0][1] };
+  }
+  return { ok: true, captured, newKo };
+}
+
+function isLegalPure(brd, x, y, color, koP) {
+  if (brd[y][x] !== EMPTY) return false;
+  if (koP && koP.x === x && koP.y === y) return false;
+  const tmp = cloneBoard(brd);
+  return placeStonePure(tmp, x, y, color, koP).ok;
+}
+
+function getLegalMovesPure(brd, color, koP) {
+  const moves = [];
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if (isLegalPure(brd, x, y, color, koP)) moves.push([x, y]);
+    }
+  }
+  return moves;
+}
+
 function captureCount(x, y, color) {
-  // board をコピーして実際に置いて確認（実盤は変更しない）
-  const brd = board.map(r => [...r]);
-  const savedStar = new Set(starStones);
-  const result = placeStone(brd, x, y, color, false, koPoint);
-  starStones.clear();
-  savedStar.forEach(s => starStones.add(s));
+  const brd = cloneBoard(board);
+  const result = placeStonePure(brd, x, y, color, koPoint);
   return result.ok ? result.captured.length : 0;
 }
 
-// 現在 color の石でアタリ（呼吸点=1）になっている連の座標集合を返す
-function getAtariPoints(color) {
-  const atariPoints = new Set(); // "x,y" 形式
+function getAtariPointsOn(brd, color) {
+  const atariPoints = new Set();
   const visited = new Set();
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
-      if (board[y][x] !== color) continue;
+      if (brd[y][x] !== color) continue;
       const key = `${x},${y}`;
       if (visited.has(key)) continue;
-      const g = getGroup(board, x, y);
+      const g = getGroup(brd, x, y);
       g.stones.forEach(([sx, sy]) => visited.add(`${sx},${sy}`));
       if (g.liberties.size === 1) {
-        // この連の唯一の呼吸点（逃げ先）を登録
         g.liberties.forEach(lib => atariPoints.add(lib));
-        // この連の石の隣の空点も逃げ候補として登録
         for (const [sx, sy] of g.stones) {
           for (const [nx, ny] of neighbors(sx, sy)) {
-            if (board[ny][nx] === EMPTY) atariPoints.add(`${nx},${ny}`);
+            if (brd[ny][nx] === EMPTY) atariPoints.add(`${nx},${ny}`);
           }
         }
       }
@@ -772,28 +827,197 @@ function getAtariPoints(color) {
   return atariPoints;
 }
 
-// 隣接する盤面の石の有無を確認（自他どちらでも）
-function hasAdjacentStone(x, y) {
-  return neighbors(x, y).some(([nx, ny]) => board[ny][nx] !== EMPTY);
-}
+function getAtariPoints(color) { return getAtariPointsOn(board, color); }
 
-// 2マス以内に石があるか（簡易近接チェック）
-function hasNearbyStone(x, y) {
+function hasAdjacentStoneOn(brd, x, y) {
+  return neighbors(x, y).some(([nx, ny]) => brd[ny][nx] !== EMPTY);
+}
+function hasAdjacentStone(x, y) { return hasAdjacentStoneOn(board, x, y); }
+
+function hasNearbyStoneOn(brd, x, y) {
   for (let dy = -2; dy <= 2; dy++) {
     for (let dx = -2; dx <= 2; dx++) {
       if (dx === 0 && dy === 0) continue;
       const nx = x + dx, ny = y + dy;
-      if (inBounds(nx, ny) && board[ny][nx] !== EMPTY) return true;
+      if (inBounds(nx, ny) && brd[ny][nx] !== EMPTY) return true;
     }
   }
   return false;
 }
+function hasNearbyStone(x, y) { return hasNearbyStoneOn(board, x, y); }
 
-// 1線（端）かどうか
 function isEdge(x, y) { return x === 0 || x === SIZE - 1 || y === 0 || y === SIZE - 1; }
+function isSecondLine(x, y) { return x === 1 || x === SIZE - 2 || y === 1 || y === SIZE - 2; }
+function isCenterish(x, y) { return x >= 2 && x <= SIZE - 3 && y >= 2 && y <= SIZE - 3; }
+function openingPhase(moveNo) { return moveNo < 18; }
+function middlePhase(moveNo) { return moveNo >= 18 && moveNo < 48; }
+
+function countAround(brd, x, y, color, radius) {
+  let own = 0, opp = 0, empty = 0;
+  const enemy = 1 - color;
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const nx = x + dx, ny = y + dy;
+      if (!inBounds(nx, ny)) continue;
+      const v = brd[ny][nx];
+      if (v === color) own++;
+      else if (v === enemy) opp++;
+      else empty++;
+    }
+  }
+  return { own, opp, empty };
+}
+
+// 空点が「自分の地の骨格」になりやすいかを評価する。
+function territoryPotential(brd, x, y, color, moveNo) {
+  const r1 = countAround(brd, x, y, color, 1);
+  const r2 = countAround(brd, x, y, color, 2);
+  let score = 0;
+
+  score += r1.own * 12 - r1.opp * 10;
+  score += r2.own * 4  - r2.opp * 3;
+  if (r1.own >= 2 && r1.opp === 0) score += SCORE_TERRITORY_BASE;
+  if (r2.own >= 3 && r2.opp <= 1) score += 12;
+  if (r1.own === 0 && r2.own === 0 && moveNo > 10) score -= 10;
+
+  if (isCenterish(x, y)) score += SCORE_CENTER_BONUS;
+  if (x >= 3 && x <= 5 && y >= 3 && y <= 5) score += 6;
+
+  if (openingPhase(moveNo)) {
+    if (isEdge(x, y)) score += SCORE_EDGE_PENALTY * 2;
+    else if (isSecondLine(x, y)) score += SCORE_SECOND_LINE_OPENING_PENALTY;
+  } else if (middlePhase(moveNo)) {
+    if (isEdge(x, y)) score += SCORE_EDGE_PENALTY;
+  } else {
+    if (isEdge(x, y)) score -= 5;
+  }
+  return score;
+}
+
+function groupLibertyScore(brd, color) {
+  let score = 0;
+  const visited = new Set();
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if (brd[y][x] !== color) continue;
+      const key = `${x},${y}`;
+      if (visited.has(key)) continue;
+      const g = getGroup(brd, x, y);
+      g.stones.forEach(([sx, sy]) => visited.add(`${sx},${sy}`));
+      const libs = g.liberties.size;
+      score += Math.min(libs, 5) * 7;
+      if (libs === 1) score -= 75 + g.stones.length * 12;
+      else if (libs === 2) score -= 18;
+      if (g.stones.length >= 3 && libs >= 3) score += 12;
+    }
+  }
+  return score;
+}
+
+function evaluateBoard(brd, color) {
+  const opp = 1 - color;
+  let score = 0;
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const v = brd[y][x];
+      if (v === color) score += 16;
+      else if (v === opp) score -= 16;
+      else {
+        const ownInf = countAround(brd, x, y, color, 2);
+        const oppInf = countAround(brd, x, y, opp, 2);
+        const influence = ownInf.own - oppInf.own;
+        score += influence * 3;
+        if (ownInf.own >= 3 && oppInf.own <= 1) score += 10;
+        if (oppInf.own >= 3 && ownInf.own <= 1) score -= 10;
+      }
+    }
+  }
+  score += groupLibertyScore(brd, color);
+  score -= groupLibertyScore(brd, opp) * 0.85;
+  return score;
+}
+
+function moveHeuristicOn(brd, x, y, color, koP, moveNo) {
+  const tmp = cloneBoard(brd);
+  const result = placeStonePure(tmp, x, y, color, koP);
+  if (!result.ok) return -Infinity;
+
+  const opp = 1 - color;
+  const atariPoints = getAtariPointsOn(brd, color);
+  const oppAtari = getAtariPointsOn(brd, opp);
+  const selfAfter = getGroup(tmp, x, y);
+  let score = 0;
+
+  if (result.captured.length > 0) score += SCORE_CAPTURE + result.captured.length * 18;
+  if (atariPoints.has(`${x},${y}`)) score += SCORE_ESCAPE_ATARI;
+  if (oppAtari.has(`${x},${y}`)) score += 34;
+
+  const libs = selfAfter.liberties.size;
+  score += Math.min(libs, 5) * 12;
+  if (libs === 1) score -= 115;
+  else if (libs === 2) score -= 28;
+
+  score += territoryPotential(brd, x, y, color, moveNo);
+
+  if (hasAdjacentStoneOn(brd, x, y)) score += SCORE_NEAR_STONE;
+  else if (hasNearbyStoneOn(brd, x, y)) score += SCORE_NEAR_STONE2;
+  else if (!openingPhase(moveNo)) score -= 8;
+
+  score += evaluateBoard(tmp, color) * 0.18;
+  return score;
+}
+
+function topMoves(brd, moves, color, koP, moveNo, limit) {
+  return moves
+    .map(([x, y]) => ({ x, y, score: moveHeuristicOn(brd, x, y, color, koP, moveNo) }))
+    .filter(m => Number.isFinite(m.score))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+function lookaheadScore(x, y, color) {
+  const opp = 1 - color;
+  const moveNo = totalMoves + 1;
+  const first = cloneBoard(board);
+  const firstResult = placeStonePure(first, x, y, color, koPoint);
+  if (!firstResult.ok) return -Infinity;
+
+  const firstScore = evaluateBoard(first, color) + moveHeuristicOn(board, x, y, color, koPoint, moveNo);
+  const oppMoves = getLegalMovesPure(first, opp, firstResult.newKo);
+  if (oppMoves.length === 0) return firstScore + 35;
+
+  const oppCandidates = topMoves(first, oppMoves, opp, firstResult.newKo, moveNo + 1, SIMPLE_AI_REPLY_LIMIT);
+  let worstAfterReply = Infinity;
+
+  for (const reply of oppCandidates) {
+    const second = cloneBoard(first);
+    const secondResult = placeStonePure(second, reply.x, reply.y, opp, firstResult.newKo);
+    if (!secondResult.ok) continue;
+
+    let afterReplyScore = evaluateBoard(second, color) - reply.score * 0.35;
+    const myReplies = getLegalMovesPure(second, color, secondResult.newKo);
+    if (myReplies.length > 0) {
+      const myCandidates = topMoves(second, myReplies, color, secondResult.newKo, moveNo + 2, SIMPLE_AI_RESCUE_LIMIT);
+      let bestRescue = -Infinity;
+      for (const rescue of myCandidates) {
+        const third = cloneBoard(second);
+        const thirdResult = placeStonePure(third, rescue.x, rescue.y, color, secondResult.newKo);
+        if (!thirdResult.ok) continue;
+        const rescueScore = evaluateBoard(third, color) + rescue.score * 0.45;
+        if (rescueScore > bestRescue) bestRescue = rescueScore;
+      }
+      if (bestRescue > -Infinity) afterReplyScore = afterReplyScore * 0.45 + bestRescue * 0.55;
+    }
+    if (afterReplyScore < worstAfterReply) worstAfterReply = afterReplyScore;
+  }
+
+  if (worstAfterReply === Infinity) return firstScore;
+  return firstScore * 0.45 + worstAfterReply * 0.55;
+}
 
 // ═══════════════════════════════════════════════════════════
-//  Simple CPU メイン
+//  Simple CPU メイン（v1.0 強化版）
 //  legalMoves: [[x,y], ...] 合法手リスト
 //  color: 打つ色
 //  返り値: { x, y, useStar, starColor } | null（パスを示す）
@@ -801,63 +1025,39 @@ function isEdge(x, y) { return x === 0 || x === SIZE - 1 || y === 0 || y === SIZ
 function simpleAI(legalMoves, color) {
   if (legalMoves.length === 0) return null;
 
-  const opp         = 1 - color;
-  const atariPoints = getAtariPoints(color);   // 自分のアタリ逃げ先
-  const oppAtari    = getAtariPoints(opp);     // 相手のアタリ（取り逃し防止参考）
+  const opp = 1 - color;
+  const moveNo = totalMoves + 1;
+  const candidates = topMoves(board, legalMoves, color, koPoint, moveNo, SIMPLE_AI_CANDIDATES);
 
-  // 各手にスコアを付ける
-  const scored = legalMoves.map(([x, y]) => {
-    let score = 0;
+  const scored = candidates.map(m => {
+    const reading = lookaheadScore(m.x, m.y, color);
+    const score = m.score * 0.45 + reading * 0.55 + Math.random() * SCORE_JITTER;
+    return { x: m.x, y: m.y, score, baseScore: m.score, reading };
+  }).sort((a, b) => b.score - a.score);
 
-    // 1. 相手石を取れる
-    const cap = captureCount(x, y, color);
-    if (cap > 0) score += SCORE_CAPTURE + cap * 5; // 多く取るほど高評価
+  const pick = scored[0] || { x: legalMoves[0][0], y: legalMoves[0][1], score: 0 };
 
-    // 2. 自分のアタリを救う
-    if (atariPoints.has(`${x},${y}`)) score += SCORE_ESCAPE_ATARI;
-
-    // 3. 1線ペナルティ
-    if (isEdge(x, y)) score += SCORE_EDGE_PENALTY;
-
-    // 4. 隣接に石がある（既存石の近く優先）
-    if (hasAdjacentStone(x, y)) score += SCORE_NEAR_STONE;
-    else if (hasNearbyStone(x, y)) score += SCORE_NEAR_STONE2;
-
-    // 5. ランダム揺らぎ（同スコアに変化をつける）
-    score += Math.random() * SCORE_JITTER;
-
-    return { x, y, score };
-  });
-
-  // スコア降順にソート
-  scored.sort((a, b) => b.score - a.score);
-
-  // 最高スコアの手を選ぶ（上位3件の中からランダムに選び単調にならないようにする）
-  const topN  = Math.min(3, scored.length);
-  const pick  = scored[Math.floor(Math.random() * topN)];
-
-  // ── 星石の使用判断 ──
-  let useStar      = false;
-  let starColor    = color;
+  let useStar = false;
+  let starColor = color;
 
   if (canUseStarStone(color) && totalMoves >= SIMPLE_STAR_MIN_MOVE) {
-    // 使う候補点のスコアを計算
     let starScore = 0;
-
-    // 相手石の隣に打つなら星石の効果が高い
     for (const [nx, ny] of neighbors(pick.x, pick.y)) {
       if (board[ny][nx] === opp) { starScore += SCORE_STAR_NEAR_OPP; break; }
     }
 
-    // 自分のアタリ連の近くなら星石で補強
+    const atariPoints = getAtariPoints(color);
     if (atariPoints.has(`${pick.x},${pick.y}`)) starScore += SCORE_STAR_NEAR_ATARI;
 
-    // スコアが閾値を超えたら星石を使う（一定確率でも使う）
-    const USE_STAR_THRESHOLD = 20;
-    if (starScore >= USE_STAR_THRESHOLD || Math.random() < 0.08) {
-      useStar   = true;
-      // 星石の色: 自分の色にするのが基本。ただし相手色で打つことで敵陣攪乱（20%）
-      starColor = Math.random() < 0.8 ? color : opp;
+    const terr = territoryPotential(board, pick.x, pick.y, color, moveNo);
+    if (terr >= 30) starScore += 18;
+    if (pick.score >= 160) starScore += 10;
+
+    const USE_STAR_THRESHOLD = 36;
+    if (starScore >= USE_STAR_THRESHOLD || (pick.score >= 190 && Math.random() < 0.12)) {
+      useStar = true;
+      const around = countAround(board, pick.x, pick.y, color, 1);
+      starColor = around.opp >= 2 && Math.random() < 0.22 ? opp : color;
     }
   }
 
