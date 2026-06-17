@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  星囲碁 / Hoshigo Prototype v1.0h
+  星囲碁 / Hoshigo Prototype v1.0h-fixed
   Concept & Design: 刻神楽 (_tokikagura)
   Implementation support: AI-assisted prototyping
   License: Prototype / private experimental build
@@ -9,7 +9,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 プロトタイプ v1.0h</title>
+  <title>星囲碁 プロトタイプ v1.0h-fixed</title>
   <style>
 /* ════════════════════════════════
    リセット・基礎
@@ -312,7 +312,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 <body>
 <div id="app">
 
-  <div id="title-bar">★ 星囲碁 プロトタイプ v1.0h</div>
+  <div id="title-bar">★ 星囲碁 プロトタイプ v1.0h-fixed-fixed</div>
 
   <!-- 手番・状態 -->
   <div id="status-bar">準備中…</div>
@@ -1362,7 +1362,7 @@ function expertEvaluateBoard(brd, color) {
   return score;
 }
 
-function expertMoveHeuristicOn(brd, x, y, color, koP, moveNo) {
+function expertMoveHeuristicOn(brd, x, y, color, koP, moveNo, checkReplies = true) {
   const tmp = cloneBoard(brd);
   const result = placeStonePure(tmp, x, y, color, koP);
   if (!result.ok) return -Infinity;
@@ -1386,25 +1386,30 @@ function expertMoveHeuristicOn(brd, x, y, color, koP, moveNo) {
   score += expertEvaluateBoard(tmp, color) * 0.23;
 
   // 相手の次の一撃で取られやすい形は、読みに入る前から嫌う。
-  const oppMoves = getLegalMovesPure(tmp, opp, result.newKo);
-  const sharpReplies = topExpertMoves(tmp, oppMoves, opp, result.newKo, moveNo + 1, Math.min(5, EXPERT_AI_REPLY_LIMIT));
-  if (sharpReplies.length) {
-    let worst = 0;
-    for (const r of sharpReplies) {
-      const after = cloneBoard(tmp);
-      const rr = placeStonePure(after, r.x, r.y, opp, result.newKo);
-      if (!rr.ok) continue;
-      const loss = expertEvaluateBoard(tmp, color) - expertEvaluateBoard(after, color);
-      if (loss > worst) worst = loss;
+  // ただし候補生成中にここへ入ると topExpertMoves → expertMoveHeuristicOn が
+  // 再帰してSafariで Maximum call stack size exceeded になるため、
+  // checkReplies=false のときは必ず浅い評価で止める。
+  if (checkReplies) {
+    const oppMoves = getLegalMovesPure(tmp, opp, result.newKo);
+    const sharpReplies = topExpertMoves(tmp, oppMoves, opp, result.newKo, moveNo + 1, Math.min(5, EXPERT_AI_REPLY_LIMIT));
+    if (sharpReplies.length) {
+      let worst = 0;
+      for (const r of sharpReplies) {
+        const after = cloneBoard(tmp);
+        const rr = placeStonePure(after, r.x, r.y, opp, result.newKo);
+        if (!rr.ok) continue;
+        const loss = expertEvaluateBoard(tmp, color) - expertEvaluateBoard(after, color);
+        if (loss > worst) worst = loss;
+      }
+      score -= worst * 0.18;
     }
-    score -= worst * 0.18;
   }
   return score;
 }
 
 function topExpertMoves(brd, moves, color, koP, moveNo, limit) {
   return moves
-    .map(([x, y]) => ({ x, y, score: expertMoveHeuristicOn(brd, x, y, color, koP, moveNo) }))
+    .map(([x, y]) => ({ x, y, score: expertMoveHeuristicOn(brd, x, y, color, koP, moveNo, false) }))
     .filter(m => Number.isFinite(m.score))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
@@ -1652,7 +1657,7 @@ function buildSGF() {
     'SGF export prioritizes board reproduction. ' +
     `Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
 
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.0h]C[${rootComment}]`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.0h-fixed]C[${rootComment}]`;
 
   // ── 手順ノード ──
   for (const e of moveLog) {
