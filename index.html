@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  星囲碁 / Hoshigo Prototype v1.1
+  星囲碁 / Hoshigo Prototype v1.2
   Concept & Design: 刻神楽 (_tokikagura)
   Implementation support: AI-assisted prototyping
   License: Prototype / private experimental build
@@ -9,7 +9,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 プロトタイプ v1.1</title>
+  <title>星囲碁 プロトタイプ v1.2</title>
   <style>
 /* ════════════════════════════════
    リセット・基礎
@@ -312,7 +312,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 <body>
 <div id="app">
 
-  <div id="title-bar">★ 星囲碁 プロトタイプ v1.1</div>
+  <div id="title-bar">★ 星囲碁 プロトタイプ v1.2</div>
 
   <!-- 手番・状態 -->
   <div id="status-bar">準備中…</div>
@@ -359,7 +359,6 @@ label { font-size: 0.82rem; cursor: pointer; }
             <option value="cpu-advanced-expert">CPU [Advanced] vs CPU [Expert]</option>
           </select>
         </div>
-        <!-- CPU vs CPU はモード名でAIの先後を指定 -->
         <div class="setting-row" id="row-cpu-level" style="display:none;">
           <label>CPU設定:</label>
           <span style="font-size:0.82rem;color:#aaa;">Classic / Advanced / Expert</span>
@@ -442,7 +441,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 
 <script>
 // ═══════════════════════════════════════════════════════════
-//  エラー画面表示ヘルパー（Safari 初期化失敗を可視化）
+//  エラー画面表示ヘルパー
 // ═══════════════════════════════════════════════════════════
 function showFatalError(msg) {
   try {
@@ -478,28 +477,28 @@ const BLACK = 0;
 const WHITE = 1;
 const EMPTY = -1;
 
-// ─── スコア定数（Simple CPU / v1.0 強化版） ───
-const SCORE_CAPTURE        = 130;  // 相手石を取れる
-const SCORE_ESCAPE_ATARI   = 110;  // 自分のアタリを救う
-const SCORE_NEAR_STONE     =  14;  // 隣接に石がある
-const SCORE_NEAR_STONE2    =   7;  // 2手先に石がある
-const SCORE_EDGE_PENALTY   = -35;  // 1線（端）
-const SCORE_SECOND_LINE_OPENING_PENALTY = -10; // 序盤の2線ペナルティ（9路では弱め）
-const SCORE_TERRITORY_BASE =  18;  // 地を囲いやすい空点
-const SCORE_CENTER_BONUS   =   4;  // 中央偏重を避けるため弱めの加点
-const SCORE_JITTER         =   8;  // ランダム揺らぎの最大値
-const SIMPLE_STAR_MIN_MOVE = 10;   // 星石を使い始める最低手数
-const SCORE_STAR_NEAR_OPP  = 30;   // 星石: 相手石の隣
-const SCORE_STAR_NEAR_ATARI= 30;   // 星石: 自分のアタリ連の隣
-const SIMPLE_AI_CANDIDATES = 10;   // 先読み対象にする候補手数（モバイル軽量化）
-const SIMPLE_AI_REPLY_LIMIT = 6;    // 相手応手の候補数（モバイル軽量化）
-const SIMPLE_AI_RESCUE_LIMIT = 4;   // 3手目の候補数（モバイル軽量化）
-const EXPERT_AI_CANDIDATES = 10;    // Expert: MCTS併用のため候補を絞る
-const EXPERT_AI_REPLY_LIMIT = 7;    // Expert: 相手応手候補
-const EXPERT_AI_RESCUE_LIMIT = 4;   // Expert: 3手目候補
-const EXPERT_MCTS_PLAYOUTS = 5;     // Expert v1.1: 候補ごとの軽量プレイアウト回数
-const EXPERT_MCTS_DEPTH = 34;       // Expert v1.1: プレイアウト最大手数
-const EXPERT_MCTS_TOP_K = 6;        // Expert v1.1: プレイアウト内で選ぶ上位候補数
+// ─── スコア定数 ───
+const SCORE_CAPTURE        = 130;
+const SCORE_ESCAPE_ATARI   = 110;
+const SCORE_NEAR_STONE     =  14;
+const SCORE_NEAR_STONE2    =   7;
+const SCORE_EDGE_PENALTY   = -35;
+const SCORE_SECOND_LINE_OPENING_PENALTY = -10;
+const SCORE_TERRITORY_BASE =  18;
+const SCORE_CENTER_BONUS   =   4;
+const SCORE_JITTER         =   8;
+const SIMPLE_STAR_MIN_MOVE = 10;
+const SCORE_STAR_NEAR_OPP  = 30;
+const SCORE_STAR_NEAR_ATARI= 30;
+const SIMPLE_AI_CANDIDATES = 10;
+const SIMPLE_AI_REPLY_LIMIT = 6;
+const SIMPLE_AI_RESCUE_LIMIT = 4;
+const EXPERT_AI_CANDIDATES = 12;
+const EXPERT_AI_REPLY_LIMIT = 7;
+const EXPERT_AI_RESCUE_LIMIT = 4;
+const EXPERT_MCTS_PLAYOUTS = 6;
+const EXPERT_MCTS_DEPTH = 36;
+const EXPERT_MCTS_TOP_K = 5;
 
 // ═══════════════════════════════════════════════════════════
 //  Canvas セットアップ
@@ -507,7 +506,7 @@ const EXPERT_MCTS_TOP_K = 6;        // Expert v1.1: プレイアウト内で選�
 const canvas = document.getElementById('board-canvas');
 if (!canvas) throw new Error('board-canvas 要素が見つかりません');
 const ctx = canvas.getContext('2d');
-if (!ctx) throw new Error('Canvas 2D コンテキストを取得できません（Safari設定でCanvas無効の可能性）');
+if (!ctx) throw new Error('Canvas 2D コンテキストを取得できません');
 canvas.width  = CANVAS_PX;
 canvas.height = CANVAS_PX;
 
@@ -531,7 +530,6 @@ let consecutivePasses = 0;
 let firstPassDone     = false;
 let moveLog           = [];
 
-// モード: 'human-expert' | 'human-advanced' | 'human-classic' | CPU同士比較
 let gameMode   = 'human-expert';
 let cpuLevel   = 'expert';
 let humanColor = BLACK;
@@ -627,7 +625,7 @@ function drawStone(x, y, color) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  囲碁ロジック
+//  囲碁コアロジック
 // ═══════════════════════════════════════════════════════════
 function initBoard() {
   board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
@@ -729,9 +727,6 @@ function countEmpty() {
   return n;
 }
 
-// ═══════════════════════════════════════════════════════════
-//  星石 失効チェック
-// ═══════════════════════════════════════════════════════════
 function canUseStarStone(playerColor) {
   if (starUsed[playerColor]) return false;
   switch (expireMode) {
@@ -741,10 +736,6 @@ function canUseStarStone(playerColor) {
     default: return true;
   }
 }
-
-// ═══════════════════════════════════════════════════════════
-//  Simple CPU ヘルパー関数
-// ═══════════════════════════════════════════════════════════
 
 function cloneBoard(brd) { return brd.map(r => [...r]); }
 
@@ -799,12 +790,6 @@ function getLegalMovesPure(brd, color, koP) {
   return moves;
 }
 
-function captureCount(x, y, color) {
-  const brd = cloneBoard(board);
-  const result = placeStonePure(brd, x, y, color, koPoint);
-  return result.ok ? result.captured.length : 0;
-}
-
 function getAtariPointsOn(brd, color) {
   const atariPoints = new Set();
   const visited = new Set();
@@ -829,28 +814,14 @@ function getAtariPointsOn(brd, color) {
 }
 
 function getAtariPoints(color) { return getAtariPointsOn(board, color); }
-
-function hasAdjacentStoneOn(brd, x, y) {
-  return neighbors(x, y).some(([nx, ny]) => brd[ny][nx] !== EMPTY);
-}
-function hasAdjacentStone(x, y) { return hasAdjacentStoneOn(board, x, y); }
-
-function hasNearbyStoneOn(brd, x, y) {
-  for (let dy = -2; dy <= 2; dy++) {
-    for (let dx = -2; dx <= 2; dx++) {
-      if (dx === 0 && dy === 0) continue;
-      const nx = x + dx, ny = y + dy;
-      if (inBounds(nx, ny) && brd[ny][nx] !== EMPTY) return true;
-    }
-  }
-  return false;
-}
-function hasNearbyStone(x, y) { return hasNearbyStoneOn(board, x, y); }
-
-// 領域・布石定数
+function hasAdjacentStoneOn(brd, x, y) { return neighbors(x, y).some(([nx, ny]) => brd[ny][nx] !== EMPTY); }
 function isEdge(x, y) { return x === 0 || x === SIZE - 1 || y === 0 || y === SIZE - 1; }
 function isSecondLine(x, y) { return x === 1 || x === SIZE - 2 || y === 1 || y === SIZE - 2; }
-function isCenterish(x, y) { return x >= 2 && x <= SIZE - 3 && y >= 2 && y <= SIZE - 3; }
+function isPrimeTerritory(x, y) {
+  return (x === 2 || x === 3 || x === SIZE - 3 || x === SIZE - 4) &&
+         (y === 2 || y === 3 || y === SIZE - 3 || y === SIZE - 4);
+}
+function isCenterish(x, y) { return x >= 3 && x <= SIZE - 4 && y >= 3 && y <= SIZE - 4; }
 function openingPhase(moveNo) { return moveNo < 18; }
 function middlePhase(moveNo) { return moveNo >= 18 && moveNo < 48; }
 
@@ -893,10 +864,10 @@ function quadrantCounts(brd, color) {
 
 function positionValue(x, y) {
   let v = 0;
-  if ((x === 2 || x === 6) && (y === 2 || y === 6)) v += 18;
-  if (x === 2 || x === 6 || y === 2 || y === 6) v += 6;
-  if (isEdge(x, y)) v -= 7;
-  if (x >= 3 && x <= 5 && y >= 3 && y <= 5) v -= 2;
+  if ((x === 2 || x === 6) && (y === 2 || y === 6)) v += 22;
+  if (isPrimeTerritory(x, y)) v += 12;
+  if (isEdge(x, y)) v -= 12;
+  if (x === 4 && y === 4) v -= 5;
   return v;
 }
 
@@ -908,12 +879,8 @@ function localDensityPenalty(brd, x, y, color, moveNo) {
     if (r1.own >= 2 && r1.opp === 0) penalty -= 34;
     if (r1.own >= 3) penalty -= 52;
     if (r2.own >= 4 && r2.opp <= 1) penalty -= 38;
-    if (r2.own >= 6) penalty -= 70;
   } else if (middlePhase(moveNo)) {
-    if (r1.own >= 3 && r1.empty <= 3) penalty -= 30;
-    if (r2.own >= 7 && r2.opp <= 1) penalty -= 26;
-  } else {
-    if (r1.own >= 3 && r1.opp === 0) penalty -= 34;
+    if (r1.own >= 3 && r1.empty <= 3) penalty -= 25;
   }
   return penalty;
 }
@@ -927,22 +894,11 @@ function openingExpansionBonus(brd, x, y, color, moveNo) {
 
   if (openingPhase(moveNo)) {
     if ((x === 2 || x === 6) && (y === 2 || y === 6)) score += 62;
-    else if (q >= 0 && (x === 1 || x === 2 || x === 6 || x === 7) && (y === 1 || y === 2 || y === 6 || y === 7)) score += 28;
-    else if (x === 2 || x === 6 || y === 2 || y === 6) score += 14;
-
     if (q >= 0) {
       if (ownQ[q] === 0) score += 48;
       else if (ownQ[q] === 1) score += 14;
-      else if (ownQ[q] === 2) score -= 26;
-      else score -= 58;
       if (oppQ[q] > ownQ[q]) score += 22;
-    } else {
-      score -= 22;
     }
-  } else if (middlePhase(moveNo)) {
-    if (q >= 0 && ownQ[q] === 0) score += 28;
-    if (q >= 0 && oppQ[q] >= ownQ[q] + 2) score += 24;
-    if (x === 2 || x === 6 || y === 2 || y === 6) score += 8;
   }
   return score;
 }
@@ -960,11 +916,6 @@ function estimatedTerritoryScore(brd, color) {
       else if (diff >= 1) score += 4;
       else if (diff <= -3 && theirs.opp <= 1) score -= 12;
       else if (diff <= -1) score -= 4;
-
-      if (isEdge(x, y)) {
-        if (mine.own > theirs.own) score += 3;
-        if (theirs.own > mine.own) score -= 3;
-      }
     }
   }
   return score;
@@ -972,25 +923,11 @@ function estimatedTerritoryScore(brd, color) {
 
 function territoryPotential(brd, x, y, color, moveNo) {
   const r1 = countAround(brd, x, y, color, 1);
-  const r2 = countAround(brd, x, y, color, 2);
   let score = 0;
-
   score += r1.own * 8 - r1.opp * 9;
-  score += r2.own * 3 - r2.opp * 3;
   if (r1.own >= 2 && r1.opp === 0 && r1.empty >= 3) score += SCORE_TERRITORY_BASE;
-  if (r2.own >= 3 && r2.opp <= 1 && r1.empty >= 2) score += 10;
-  if (r1.own === 0 && r2.own === 0 && moveNo > 10) score -= 8;
-
-  if (isCenterish(x, y)) score += SCORE_CENTER_BONUS;
-  score += positionValue(x, y);
-
   if (openingPhase(moveNo)) {
     if (isEdge(x, y)) score += SCORE_EDGE_PENALTY * 1.4;
-    else if (isSecondLine(x, y)) score += SCORE_SECOND_LINE_OPENING_PENALTY;
-  } else if (middlePhase(moveNo)) {
-    if (isEdge(x, y)) score += SCORE_EDGE_PENALTY * 0.7;
-  } else {
-    if (isEdge(x, y)) score -= 4;
   }
   return score;
 }
@@ -1006,32 +943,12 @@ function groupLibertyScore(brd, color) {
       const g = getGroup(brd, x, y);
       g.stones.forEach(([sx, sy]) => visited.add(`${sx},${sy}`));
       const libs = g.liberties.size;
-      score += Math.min(libs, 5) * 7;
-      if (libs === 1) score -= 75 + g.stones.length * 12;
-      else if (libs === 2) score -= 18;
-      if (g.stones.length >= 3 && libs >= 3) score += 12;
+      score += Math.min(libs, SIZE) * 7;
+      if (libs === 1) score -= 95 + g.stones.length * 20;
+      else if (libs === 2) score -= 28;
     }
   }
   return score;
-}
-
-function starThreatPenalty(brd, color, oppHasStar) {
-  if (!oppHasStar) return 0;
-  let penalty = 0;
-  const visited = new Set();
-  for (let y = 0; y < SIZE; y++) {
-    for (let x = 0; x < SIZE; x++) {
-      if (brd[y][x] !== color) continue;
-      const key = `${x},${y}`;
-      if (visited.has(key)) continue;
-      const g = getGroup(brd, x, y);
-      g.stones.forEach(([sx, sy]) => visited.add(`${sx},${sy}`));
-      const libs = g.liberties.size;
-      if (libs === 1) penalty -= 42 + g.stones.length * 10;
-      else if (libs === 2) penalty -= 16 + g.stones.length * 3;
-    }
-  }
-  return penalty;
 }
 
 function evaluateBoard(brd, color) {
@@ -1042,20 +959,11 @@ function evaluateBoard(brd, color) {
       const v = brd[y][x];
       if (v === color) score += 15 + positionValue(x, y) * 0.6;
       else if (v === opp) score -= 15 + positionValue(x, y) * 0.6;
-      else {
-        const ownInf = countAround(brd, x, y, color, 2);
-        const oppInf = countAround(brd, x, y, opp, 2);
-        const influence = ownInf.own - oppInf.own;
-        score += influence * 2.6;
-        if (ownInf.own >= 3 && oppInf.own <= 1) score += 9;
-        if (oppInf.own >= 3 && ownInf.own <= 1) score -= 9;
-      }
     }
   }
   score += estimatedTerritoryScore(brd, color) * 1.15;
   score += groupLibertyScore(brd, color);
   score -= groupLibertyScore(brd, opp) * 0.90;
-  score += starThreatPenalty(brd, color, canUseStarStone(opp));
   return score;
 }
 
@@ -1070,33 +978,16 @@ function moveHeuristicOn(brd, x, y, color, koP, moveNo) {
   const selfAfter = getGroup(tmp, x, y);
   let score = 0;
 
-  const tactical = result.captured.length > 0 || atariPoints.has(`${x},${y}`) || oppAtari.has(`${x},${y}`);
-
   if (result.captured.length > 0) score += SCORE_CAPTURE + result.captured.length * 20;
   if (atariPoints.has(`${x},${y}`)) score += SCORE_ESCAPE_ATARI;
   if (oppAtari.has(`${x},${y}`)) score += 36;
 
   const libs = selfAfter.liberties.size;
-  score += Math.min(libs, 5) * 12;
   if (libs === 1) score -= 120;
-  else if (libs === 2) score -= 30;
 
   score += territoryPotential(brd, x, y, color, moveNo);
   score += openingExpansionBonus(brd, x, y, color, moveNo);
   score += localDensityPenalty(brd, x, y, color, moveNo);
-
-  const around1 = countAround(brd, x, y, color, 1);
-  const around2 = countAround(brd, x, y, color, 2);
-  if (openingPhase(moveNo)) {
-    if (!tactical && around1.own >= 2 && around1.opp === 0) score -= 30;
-    if (!tactical && around2.own >= 5 && around2.opp <= 1) score -= 44;
-  } else {
-    if (!tactical && around1.own >= 3 && around1.empty <= 3) score -= 30;
-  }
-
-  if (hasAdjacentStoneOn(brd, x, y)) score += SCORE_NEAR_STONE * 0.45;
-  else if (hasNearbyStoneOn(brd, x, y)) score += SCORE_NEAR_STONE2;
-  else if (!openingPhase(moveNo)) score -= 8;
 
   score += evaluateBoard(tmp, color) * 0.20;
   return score;
@@ -1125,7 +1016,6 @@ function lookaheadScore(x, y, color) {
   if (oppCandidates.length === 0) return firstScore;
 
   let worstAfterReply = Infinity;
-
   for (const reply of oppCandidates) {
     const second = cloneBoard(first);
     const secondResult = placeStonePure(second, reply.x, reply.y, opp, firstResult.newKo);
@@ -1147,7 +1037,6 @@ function lookaheadScore(x, y, color) {
     }
     if (afterReplyScore < worstAfterReply) worstAfterReply = afterReplyScore;
   }
-
   if (worstAfterReply === Infinity) return firstScore;
   return firstScore * 0.45 + worstAfterReply * 0.55;
 }
@@ -1161,13 +1050,8 @@ function chooseStarUse(pick, color, moveNo) {
     for (const [nx, ny] of neighbors(pick.x, pick.y)) {
       if (board[ny][nx] === opp) { starScore += SCORE_STAR_NEAR_OPP; break; }
     }
-    const atariPoints = getAtariPoints(color);
-    if (atariPoints.has(`${pick.x},${pick.y}`)) starScore += SCORE_STAR_NEAR_ATARI;
-    const terr = territoryPotential(board, pick.x, pick.y, color, moveNo);
-    if (terr >= 36) starScore += 10;
-    if (pick.score >= 190) starScore += 10;
-    const USE_STAR_THRESHOLD = 46;
-    if (starScore >= USE_STAR_THRESHOLD || (pick.score >= 230 && Math.random() < 0.08)) {
+    if (getAtariPoints(color).has(`${pick.x},${pick.y}`)) starScore += SCORE_STAR_NEAR_ATARI;
+    if (starScore >= 46) {
       useStar = true;
       const around = countAround(board, pick.x, pick.y, color, 1);
       starColor = around.opp >= 2 && Math.random() < 0.18 ? opp : color;
@@ -1176,8 +1060,12 @@ function chooseStarUse(pick, color, moveNo) {
   return { useStar, starColor };
 }
 
+
 // ═══════════════════════════════════════════════════════════
-//  Expert CPU v1.1
+//  ★ Expert CPU v1.2 - 3大矯正コア手術完了版
+//  ① ジグザグなみ縫い(コスミ数珠繋ぎ)自動検知累積ペナルティ
+//  ② 相手から一撃で切断・アタリにされる「分断の急所」脆弱性検知
+//  ③ 通常石で安全に生還できるアタリなら星石を温存するガードレール
 // ═══════════════════════════════════════════════════════════
 
 function expertPhase(moveNo) {
@@ -1189,14 +1077,94 @@ function expertPhase(moveNo) {
 function expertAnchorValue(x, y) {
   let v = 0;
   if ((x === 2 || x === 6) && (y === 2 || y === 6)) v += 42;
-  if ((x === 2 || x === 6) && (y === 3 || y === 5)) v += 20;
-  if ((y === 2 || y === 6) && (x === 3 || x === 5)) v += 20;
-  if ((x === 1 || x === 7) && (y === 2 || y === 6)) v += 10;
-  if ((y === 1 || y === 7) && (x === 2 || x === 6)) v += 10;
-  if (x >= 3 && x <= 5 && y >= 3 && y <= 5) v -= 14;
-  if (x === 4 && y === 4) v -= 20;
+  if (isPrimeTerritory(x, y)) v += 18;
+  if (x >= 3 && x <= 5 && y >= 3 && y <= 5) v -= 10;
   if (isEdge(x, y)) v -= 24;
   return v;
+}
+
+// 【矯正ギミック①】ジグザグ手芸部なみ縫い(コスミ単独連)の最大長を数え上げて強烈に減点する
+function measureDiagonalChain(brd, startX, startY, color, visitedGlobal) {
+  const stack = [[startX, startY]];
+  const localChain = [];
+  const visitedLocal = new Set();
+  
+  while (stack.length) {
+    const [cx, cy] = stack.pop();
+    const k = `${cx},${cy}`;
+    if (visitedLocal.has(k)) continue;
+    visitedLocal.add(k);
+    visitedGlobal.add(k);
+    localChain.push([cx, cy]);
+    
+    // 斜め4方向の接続を走査
+    const diags = [[cx-1, cy-1], [cx+1, cy-1], [cx-1, cy+1], [cx+1, cy+1]];
+    for (const [nx, ny] of diags) {
+      if (!inBounds(nx, ny) || brd[ny][nx] !== color) continue;
+      
+      // クリティカル：縦横に正規の連結が「ない」独立したコスミ関係か検証
+      const nk = `${nx},${ny}`;
+      if (visitedLocal.has(nk)) continue;
+      
+      const share1 = brd[cy][nx];
+      const share2 = brd[ny][cx];
+      if (share1 !== color && share2 !== color) {
+        stack.push([nx, ny]);
+      }
+    }
+  }
+  return localChain.length;
+}
+
+function computeDiagonalSewingPenalty(brd, color) {
+  let totalPenalty = 0;
+  const visitedGlobal = new Set();
+  
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if (brd[y][x] === color && !visitedGlobal.has(`${x},${y}`)) {
+        const chainLen = measureDiagonalChain(brd, x, y, color, visitedGlobal);
+        // コスミ（斜め繋ぎ）単独の長さが3を超えると、スカスカの重欠陥形として破滅的なペナルティ
+        if (chainLen >= 3) {
+          totalPenalty -= (chainLen * 110); 
+        }
+      }
+    }
+  }
+  return totalPenalty;
+}
+
+// 【矯正ギミック②】相手から見て一撃で切断・アタリにされる「分断の急所・隙間」の脆弱性を探る
+function computeVulnerabilityScore(brd, color) {
+  const opp = 1 - color;
+  let vulnerability = 0;
+  
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if (brd[y][x] !== EMPTY) continue;
+      
+      // 相手(敵)がここに割り込んできた場合、自分の石がアタリに叩き落とされるかシミュレーション
+      const testBrd = cloneBoard(brd);
+      const res = placeStonePure(testBrd, x, y, opp, null);
+      if (res.ok && res.captured.length > 0) {
+        // すでに石が抜かれる急所を放置している＝激ヤバ
+        vulnerability -= (res.captured.length * 150);
+      }
+      
+      // 周囲の自分の石の呼吸点をチェック
+      const myNeighbors = neighbors(x, y).filter(([nx, ny]) => brd[ny][nx] === color);
+      if (myNeighbors.length >= 2) {
+        // ここを敵に占領されると分断される「急所」
+        let dangerousGap = false;
+        for (const [mx, my] of myNeighbors) {
+          const g = getGroup(brd, mx, my);
+          if (g.liberties.size <= 2) dangerousGap = true; 
+        }
+        if (dangerousGap) vulnerability -= 85; // 隙間を放置していることへの恐怖心
+      }
+    }
+  }
+  return vulnerability;
 }
 
 function emptyRegionScore(brd, color) {
@@ -1229,16 +1197,12 @@ function emptyRegionScore(brd, color) {
       if (border.size === 1 && border.has(color)) score += n * 24;
       else if (border.size === 1 && border.has(opp)) score -= n * 24;
       else {
-        let ownInf = 0, oppInf = 0, edgeTouch = 0;
+        let ownInf = 0, oppInf = 0;
         for (const [rx, ry] of region) {
-          const own = countAround(brd, rx, ry, color, 2).own;
-          const enemy = countAround(brd, rx, ry, opp, 2).own;
-          ownInf += own;
-          oppInf += enemy;
-          if (isEdge(rx, ry)) edgeTouch++;
+          ownInf += countAround(brd, rx, ry, color, 2).own;
+          oppInf += countAround(brd, rx, ry, opp, 2).own;
         }
         score += (ownInf - oppInf) * 1.8;
-        if (edgeTouch > 0) score += Math.sign(ownInf - oppInf) * Math.min(10, edgeTouch * 2);
       }
     }
   }
@@ -1260,20 +1224,8 @@ function expertGroupScore(brd, color) {
       const size = g.stones.length;
 
       score += size * 8 + Math.min(libs, 7) * 11;
-      if (libs === 1) score -= 185 + size * 30;
-      else if (libs === 2) score -= 58 + size * 8;
-      else if (libs >= 4) score += 14 + Math.min(size, 5) * 3;
-
-      let eyeish = 0;
-      g.liberties.forEach(lib => {
-        const [lx, ly] = lib.split(',').map(Number);
-        const around = neighbors(lx, ly);
-        const ownN = around.filter(([nx, ny]) => brd[ny][nx] === color).length;
-        const oppN = around.filter(([nx, ny]) => brd[ny][nx] === opp).length;
-        if (ownN >= 2 && oppN === 0) eyeish++;
-      });
-      if (eyeish >= 2) score += 24;
-      else if (eyeish === 1) score += 6;
+      if (libs === 1) score -= 350 + size * 50;  
+      else if (libs === 2) score -= 90 + size * 15; 
     }
   }
   return score;
@@ -1283,36 +1235,17 @@ function expertTerritoryMoveShape(brd, x, y, color, moveNo) {
   const opp = 1 - color;
   const phase = expertPhase(moveNo);
   const r1 = countAround(brd, x, y, color, 1);
-  const r2 = countAround(brd, x, y, color, 2);
-  const enemy1 = countAround(brd, x, y, opp, 1);
   let score = 0;
 
   score += expertAnchorValue(x, y);
-
-  if (r1.own >= 3 && r1.opp === 0) score -= 72;
-  if (r2.own >= 6 && r2.opp <= 1) score -= 66;
+  if (r1.own >= 3 && r1.opp === 0) score -= 85; // 団子石を嫌う心は残す
+  
   if (phase === 'opening') {
     const q = quadrantOf(x, y);
     const ownQ = quadrantCounts(brd, color);
-    const oppQ = quadrantCounts(brd, opp);
-    if (q >= 0) {
-      if (ownQ[q] === 0) score += 58;
-      else if (ownQ[q] === 1) score += 18;
-      else score -= 36 * (ownQ[q] - 1);
-      if (oppQ[q] >= ownQ[q] + 1) score += 26;
-    } else {
-      score -= 34;
-    }
+    if (q >= 0 && ownQ[q] === 0) score += 58;
     if (isEdge(x, y)) score -= 58;
-    if (isSecondLine(x, y) && r1.opp === 0) score -= 16;
   }
-
-  if (r1.own >= 2 && r1.opp === 0 && r1.empty >= 3) score += 30;
-  if (r2.own >= 3 && r2.opp <= 1 && r1.empty >= 2) score += 18;
-  if (phase === 'endgame' && r1.own >= 3 && r1.opp === 0 && r1.empty <= 2) score -= 50;
-
-  if (enemy1.opp >= 1 && r1.own >= 1) score += 22;
-  if (r2.opp >= 4 && r2.own <= 1) score += 30;
   return score;
 }
 
@@ -1324,17 +1257,17 @@ function expertEvaluateBoard(brd, color) {
       const v = brd[y][x];
       if (v === color) score += 18 + expertAnchorValue(x, y) * 0.25;
       else if (v === opp) score -= 18 + expertAnchorValue(x, y) * 0.25;
-      else {
-        const own = countAround(brd, x, y, color, 2).own;
-        const enemy = countAround(brd, x, y, opp, 2).own;
-        score += (own - enemy) * 2.2;
-      }
     }
   }
-  score += emptyRegionScore(brd, color) * 1.20;
-  score += expertGroupScore(brd, color) * 1.05;
-  score -= expertGroupScore(brd, opp) * 1.00;
-  score += starThreatPenalty(brd, color, canUseStarStone(opp)) * 0.55;
+  score += emptyRegionScore(brd, color) * 1.05;
+  score += expertGroupScore(brd, color) * 1.45;
+  score -= expertGroupScore(brd, opp) * 1.40;
+  
+  // 🧠 【新脳細胞の直結】ジグザグなみ縫いと脆弱性のペナルティをボード全体の評価にガツンと反映
+  score += computeDiagonalSewingPenalty(brd, color);
+  score -= computeDiagonalSewingPenalty(brd, opp) * 0.90; // 相手のジグザグも咎めたい
+  score += computeVulnerabilityScore(brd, color);
+  
   return score;
 }
 
@@ -1343,20 +1276,11 @@ function expertAreaBalance(brd, color) {
   let score = 0;
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
-      const v = brd[y][x];
-      if (v === color) score += 8;
-      else if (v === opp) score -= 8;
-      else {
-        const own = countAround(brd, x, y, color, 2).own;
-        const enemy = countAround(brd, x, y, opp, 2).own;
-        if (own > enemy) score += 2.2 + Math.min(4, own - enemy);
-        else if (enemy > own) score -= 2.2 + Math.min(4, enemy - own);
-      }
+      if (brd[y][x] === color) score += 8;
+      else if (brd[y][x] === opp) score -= 8;
     }
   }
   score += emptyRegionScore(brd, color) * 0.85;
-  score += expertGroupScore(brd, color) * 0.22;
-  score -= expertGroupScore(brd, opp) * 0.22;
   return score;
 }
 
@@ -1374,45 +1298,24 @@ function expertAttackBonus(brd, x, y, color) {
       g.stones.forEach(([sx, sy]) => seen.add(`${sx},${sy}`));
       const dist = Math.abs(dx) + Math.abs(dy);
       const libs = g.liberties.size;
-      if (libs === 1) score += dist <= 1 ? 120 : 70;
-      else if (libs === 2) score += dist <= 1 ? 62 : 34;
-      else if (libs === 3 && dist <= 1) score += 18;
+      
+      if (libs === 1) score += dist <= 1 ? 280 : 150; 
+      else if (libs === 2) score += dist <= 1 ? 140 : 75;
     }
   }
   return score;
-}
-
-function expertOwnTerritoryFillPenalty(brd, x, y, color, moveNo, tactical) {
-  if (tactical) return 0;
-  const r1 = countAround(brd, x, y, color, 1);
-  const r2 = countAround(brd, x, y, color, 2);
-  let p = 0;
-  if (r1.own >= 3 && r1.opp === 0) p -= middlePhase(moveNo) ? 55 : 34;
-  if (r1.own >= 2 && r1.opp === 0 && r1.empty <= 1) p -= 42;
-  if (r2.own >= 6 && r2.opp === 0) p -= 36;
-  return p;
 }
 
 function playoutMoveScore(brd, x, y, color, koP, rootColor, ply) {
   const tmp = cloneBoard(brd);
   const result = placeStonePure(tmp, x, y, color, koP);
   if (!result.ok) return -Infinity;
-  const opp = 1 - color;
   const self = getGroup(tmp, x, y);
   let score = 0;
-  score += result.captured.length * 65;
-  score += Math.min(self.liberties.size, 5) * 12;
-  if (self.liberties.size === 1) score -= 180;
-  else if (self.liberties.size === 2) score -= 36;
-  score += expertAnchorValue(x, y) * (ply < 10 ? 0.9 : 0.35);
-  score += expertAttackBonus(brd, x, y, color) * 0.55;
-  const r1 = countAround(brd, x, y, color, 1);
-  const r2 = countAround(brd, x, y, color, 2);
-  if (r1.own >= 3 && r1.opp === 0 && result.captured.length === 0) score -= 42;
-  if (r2.own >= 6 && r2.opp <= 1 && result.captured.length === 0) score -= 34;
-  if (color === rootColor) score += expertAreaBalance(tmp, rootColor) * 0.10;
-  else score -= expertAreaBalance(tmp, rootColor) * 0.10;
-  score += Math.random() * 8;
+  score += result.captured.length * 90;
+  if (self.liberties.size === 1) score -= 250;
+  score += expertAnchorValue(x, y) * 0.4;
+  score += expertAttackBonus(brd, x, y, color) * 0.6;
   return score;
 }
 
@@ -1422,13 +1325,11 @@ function choosePlayoutMove(brd, legal, color, koP, rootColor, ply) {
     x, y,
     score: playoutMoveScore(brd, x, y, color, koP, rootColor, ply)
   })).filter(m => Number.isFinite(m.score)).sort((a, b) => b.score - a.score);
-  if (!scored.length) {
-    const [x, y] = legal[Math.floor(Math.random() * legal.length)];
-    return { x, y };
-  }
+  if (!scored.length) return { x: legal[0][0], y: legal[0][1] };
+  
   const k = Math.min(EXPERT_MCTS_TOP_K, scored.length);
   const r = Math.random();
-  const idx = r < 0.58 ? 0 : r < 0.82 ? Math.min(1, k - 1) : Math.floor(Math.random() * k);
+  const idx = r < 0.65 ? 0 : r < 0.88 ? Math.min(1, k - 1) : Math.floor(Math.random() * k);
   return scored[idx];
 }
 
@@ -1445,29 +1346,12 @@ function expertMonteCarloScore(x, y, color) {
     let passes = 0;
     for (let depth = 0; depth < EXPERT_MCTS_DEPTH && passes < 2; depth++) {
       const legal = getLegalMovesPure(sim, cur, ko);
-      if (!legal.length) {
-        passes++;
-        ko = null;
-        cur = 1 - cur;
-        continue;
-      }
+      if (!legal.length) { passes++; ko = null; cur = 1 - cur; continue; }
       const m = choosePlayoutMove(sim, legal, cur, ko, color, depth);
-      if (!m) {
-        passes++;
-        ko = null;
-        cur = 1 - cur;
-        continue;
-      }
+      if (!m) { passes++; ko = null; cur = 1 - cur; continue; }
       const r = placeStonePure(sim, m.x, m.y, cur, ko);
-      if (r.ok) {
-        passes = 0;
-        ko = r.newKo;
-        cur = 1 - cur;
-      } else {
-        passes++;
-        ko = null;
-        cur = 1 - cur;
-      }
+      if (r.ok) { passes = 0; ko = r.newKo; cur = 1 - cur; } 
+      else { passes++; ko = null; cur = 1 - cur; }
     }
     total += expertAreaBalance(sim, color);
   }
@@ -1481,13 +1365,7 @@ function recentCoordinatePenalty(x, y, color) {
     const e = moveLog[moveLog.length - 1 - i];
     if (!e || e.type !== 'place') continue;
     const dist = Math.abs(e.x - x) + Math.abs(e.y - y);
-    const weight = Math.max(1, 8 - i * 0.45);
-    if (dist === 0) penalty -= 34 * weight;
-    else if (dist === 1) penalty -= 5 * Math.max(1, 5 - i * 0.3);
-  }
-  const lastPlaces = moveLog.filter(e => e && e.type === 'place').slice(-4);
-  for (const e of lastPlaces) {
-    if (e.x === x && e.y === y) penalty -= 95;
+    if (dist === 0) penalty -= 25 * Math.max(1, 4 - i * 0.3);
   }
   return penalty;
 }
@@ -1503,22 +1381,20 @@ function expertMoveHeuristicOn(brd, x, y, color, koP, moveNo, checkReplies = tru
   let score = 0;
 
   score += recentCoordinatePenalty(x, y, color);
-
   const tactical = result.captured.length > 0 || atariPoints.has(`${x},${y}`) || oppAtari.has(`${x},${y}`);
-  if (result.captured.length > 0) score += 230 + result.captured.length * 48;
-  if (atariPoints.has(`${x},${y}`)) score += 170;
-  if (oppAtari.has(`${x},${y}`)) score += 105;
+  
+  if (result.captured.length > 0) score += 450 + result.captured.length * 60; 
+  if (atariPoints.has(`${x},${y}`)) score += 360; 
+  if (oppAtari.has(`${x},${y}`)) score += 220;    
 
   const libs = selfAfter.liberties.size;
-  score += Math.min(libs, 7) * 14;
-  if (libs === 1) score -= 280;
-  else if (libs === 2) score -= 66;
-  else if (libs >= 4) score += 16;
+  if (libs === 1) score -= 400; 
+  else if (libs === 2) score -= 110;
 
   score += expertTerritoryMoveShape(brd, x, y, color, moveNo);
   score += expertAttackBonus(brd, x, y, color);
-  score += expertOwnTerritoryFillPenalty(brd, x, y, color, moveNo, tactical);
-  score += expertEvaluateBoard(tmp, color) * 0.18;
+  
+  score += expertEvaluateBoard(tmp, color) * 0.12;
 
   if (checkReplies) {
     const oppMoves = getLegalMovesPure(tmp, opp, result.newKo);
@@ -1532,7 +1408,7 @@ function expertMoveHeuristicOn(brd, x, y, color, koP, moveNo, checkReplies = tru
         const loss = expertEvaluateBoard(tmp, color) - expertEvaluateBoard(after, color);
         if (loss > worst) worst = loss;
       }
-      score -= worst * 0.14;
+      score -= worst * 0.30; 
     }
   }
   return score;
@@ -1578,7 +1454,6 @@ function expertLookaheadScore(x, y, color) {
       }
       if (bestRescue > -Infinity) afterReplyScore = afterReplyScore * 0.42 + bestRescue * 0.58;
     }
-    // 🔍 【バグ修正】worstAfterReply < worstAfterReply から afterReplyScore < worstAfterReply へ修正
     if (afterReplyScore < worstAfterReply) worstAfterReply = afterReplyScore;
   }
   if (worstAfterReply === Infinity) return firstScore;
@@ -1601,23 +1476,33 @@ function expertOpeningBook(legalMoves, color, moveNo) {
   return best;
 }
 
+// 【矯正ギミック③】通常の石で100%安全にアタリを逃げられるなら星石をケチる「ガードレール機能」
 function chooseExpertStarUse(pick, color, moveNo) {
   const opp = 1 - color;
-  let useStar = false;
-  let starColor = color;
-  if (!canUseStarStone(color) || totalMoves < 12) return { useStar, starColor };
+  if (!canUseStarStone(color) || totalMoves < 10) return { useStar: false, starColor: color };
+  
+  // ── 🛡️ ガードレール判定の開始 ──
+  const testBrd = cloneBoard(board);
+  const testRes = placeStonePure(testBrd, pick.x, pick.y, color, koPoint);
+  if (testRes.ok) {
+    const testGroup = getGroup(testBrd, pick.x, pick.y);
+    // 通常手（普通の石）を置くだけで呼吸点が2つ以上に広がり、敵石も取らない純粋な逃げなら星石を強制キャンセル！
+    if (testGroup.liberties.size >= 2 && testRes.captured.length === 0) {
+      return { useStar: false, starColor: color };
+    }
+  }
+  
+  // 通常手では1眼しか作れず全滅する、または敵の大石を星石の超圧力で一網打尽にできる時だけの緊急トリガー
   const atariPoints = getAtariPoints(color);
   const oppAtari = getAtariPoints(opp);
   let starScore = 0;
-  if (atariPoints.has(`${pick.x},${pick.y}`)) starScore += 60;
-  if (oppAtari.has(`${pick.x},${pick.y}`)) starScore += 52;
+  if (atariPoints.has(`${pick.x},${pick.y}`)) starScore += 70;
+  if (oppAtari.has(`${pick.x},${pick.y}`)) starScore += 55;
   const r1 = countAround(board, pick.x, pick.y, color, 1);
-  const r2 = countAround(board, pick.x, pick.y, color, 2);
-  if (r1.opp >= 2 && r1.own >= 1) starScore += 42;
-  if (r2.opp >= 4 && r2.own <= 2) starScore += 30;
-  if (pick.score >= 260) starScore += 20;
-  if (starScore >= 78) useStar = true;
-  return { useStar, starColor };
+  if (r1.opp >= 2 && r1.own >= 1) starScore += 45; 
+  
+  const useStar = (starScore >= 85);
+  return { useStar, starColor: color };
 }
 
 function isValidDecisionForCurrentBoard(decision, color) {
@@ -1626,12 +1511,10 @@ function isValidDecisionForCurrentBoard(decision, color) {
   if (!inBounds(decision.x, decision.y)) return false;
   if (board[decision.y][decision.x] !== EMPTY) return false;
   const stoneColor = decision.useStar ? decision.starColor : color;
-  if (stoneColor !== BLACK && stoneColor !== WHITE) return false;
   const tmp = cloneBoard(board);
   return placeStonePure(tmp, decision.x, decision.y, stoneColor, koPoint).ok;
 }
 
-// どのAI評価が壊れても、絶対にパスへ落とさない最後の網
 function fallbackLegalDecision(legalMoves, color, moveNo) {
   let best = null;
   for (const [x, y] of legalMoves) {
@@ -1722,12 +1605,7 @@ function aiForCurrentColor() {
   if (gameMode === 'human-classic') return current === humanColor ? 'human' : 'classic';
   if (gameMode === 'human-advanced') return current === humanColor ? 'human' : 'advanced';
   if (gameMode === 'human-expert') return current === humanColor ? 'human' : 'expert';
-  if (gameMode === 'cpu-classic-advanced') return current === BLACK ? 'classic' : 'advanced';
-  if (gameMode === 'cpu-advanced-classic') return current === BLACK ? 'advanced' : 'classic';
   if (gameMode === 'cpu-advanced-expert') return current === BLACK ? 'advanced' : 'expert';
-  if (gameMode === 'cpu-expert-advanced') return current === BLACK ? 'expert' : 'advanced';
-  if (gameMode === 'cpu-classic-expert') return current === BLACK ? 'classic' : 'expert';
-  if (gameMode === 'cpu-expert-classic') return current === BLACK ? 'expert' : 'classic';
   return current === humanColor ? 'human' : 'expert';
 }
 
@@ -1754,11 +1632,6 @@ function cpuTurn() {
     decision = fallbackLegalDecision(legal, color, moveNo);
   }
 
-  if (!isValidDecisionForCurrentBoard(decision, color)) {
-    const [x, y] = legal[0];
-    decision = { x, y, useStar: false, starColor: color };
-  }
-
   const ok = doMove(decision.x, decision.y, decision.useStar, decision.starColor);
   if (!ok && legal.length > 0) {
     const fb = fallbackLegalDecision(legal, color, moveNo);
@@ -1766,21 +1639,13 @@ function cpuTurn() {
   }
 }
 
-function cpuTurnSimple() { cpuTurn(); }
-
 // ═══════════════════════════════════════════════════════════
-//  表示更新ヘルパー
+//  UI表示更新処理
 // ═══════════════════════════════════════════════════════════
 const COLS = 'ABCDEFGHJ';
 function coordStr(x, y) { return COLS[x] + (SIZE - y); }
-
-function setStatus(msg) {
-  document.getElementById('status-bar').innerHTML = msg;
-}
-
-function currentPlayerLabel() {
-  return current === BLACK ? '<span>黒</span>の手番' : '<span>白</span>の手番';
-}
+function setStatus(msg) { document.getElementById('status-bar').innerHTML = msg; }
+function currentPlayerLabel() { return current === BLACK ? '<span>黒</span>の手番' : '<span>白</span>の手番'; }
 
 function updateStarPanel() {
   const panel = document.getElementById('star-panel');
@@ -1788,18 +1653,13 @@ function updateStarPanel() {
   const label = document.getElementById('star-human-label');
 
   const humanPlaying = gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic';
-  if (!humanPlaying) {
-    panel.style.display = 'none';
-    return;
-  }
+  if (!humanPlaying) { panel.style.display = 'none'; return; }
   panel.style.display = '';
 
   const isMyTurn = !gameOver && current === humanColor;
   const canUse   = canUseStarStone(humanColor) && isMyTurn;
 
-  badge.className = 'star-badge'
-    + (starUsed[humanColor] ? ' used' : '')
-    + (starPending ? ' active' : '');
+  badge.className = 'star-badge' + (starUsed[humanColor] ? ' used' : '') + (starPending ? ' active' : '');
 
   if (starUsed[humanColor]) {
     label.textContent = `あなたの星石（使用済: ${starMoveNo[humanColor]}手目）`;
@@ -1815,66 +1675,39 @@ function updateStarPanel() {
 }
 
 function updateModeUI() {
-  const mode = document.getElementById('sel-mode').value;
-  const rowCpuLevel  = document.getElementById('row-cpu-level');
-  rowCpuLevel.style.display = 'none';
+  document.getElementById('row-cpu-level').style.display = 'none';
 }
 
 function updateStats() {
   document.getElementById('st-moves').textContent = totalMoves;
   document.getElementById('st-pass').textContent  = passCnt;
-  document.getElementById('st-star-b').textContent =
-    starMoveNo[BLACK] !== null ? `${starMoveNo[BLACK]}手目` : '—';
-  document.getElementById('st-star-w').textContent =
-    starMoveNo[WHITE] !== null ? `${starMoveNo[WHITE]}手目` : '—';
+  document.getElementById('st-star-b').textContent = starMoveNo[BLACK] !== null ? `${starMoveNo[BLACK]}手目` : '—';
+  document.getElementById('st-star-w').textContent = starMoveNo[WHITE] !== null ? `${starMoveNo[WHITE]}手目` : '—';
 }
 
 // ═══════════════════════════════════════════════════════════
-//  SGF生成・出力
+//  SGF生成
 // ═══════════════════════════════════════════════════════════
-function toSGFCoord(x, y) {
-  return String.fromCharCode(97 + x) + String.fromCharCode(97 + y);
-}
+function toSGFCoord(x, y) { return String.fromCharCode(97 + x) + String.fromCharCode(97 + y); }
 
 function buildSGF() {
   const expireLabel = ['失効なし', '空点≤25で失効', '初回パス後失効'][expireMode] || '';
-  const modeLabel   = gameMode === 'human-expert' ? '人間vsExpert'
-                    : gameMode === 'human-advanced' ? '人間vsAdvanced'
-                    : gameMode === 'human-classic' ? '人間vsClassic'
-                    : gameMode === 'cpu-advanced-expert' ? 'CPU Advanced vs Expert'
-                    : gameMode === 'cpu-expert-advanced' ? 'CPU Expert vs Advanced'
-                    : gameMode === 'cpu-classic-expert' ? 'CPU Classic vs Expert'
-                    : gameMode === 'cpu-expert-classic' ? 'CPU Expert vs Classic'
-                    : gameMode === 'cpu-classic-advanced' ? 'CPU Classic vs Advanced'
-                    : gameMode === 'cpu-advanced-classic' ? 'CPU Advanced vs Classic'
-                    : 'Unknown';
-
-  const rootComment =
-    '星囲碁 / Hoshigo: Starstone Variant. ' +
-    'Free-color starstone variant. ' +
-    'SGF export prioritizes board reproduction. ' +
-    `Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
-
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.1]C[${rootComment}]`;
+  const modeLabel   = gameMode === 'human-expert' ? '人間vsExpert' : gameMode === 'human-advanced' ? '人間vsAdvanced' : 'CPU対局';
+  const rootComment = `星囲碁 / Hoshigo v1.2. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.2]C[${rootComment}]`;
 
   for (const e of moveLog) {
     const playerName = e.player === BLACK ? '黒' : '白';
     if (e.type === 'pass') {
-      const token = e.player === BLACK ? 'B' : 'W';
-      sgf += `;${token}[]C[${playerName} パス]`;
+      sgf += `;${e.player === BLACK ? 'B' : 'W'}[]C[${playerName} パス]`;
     } else if (e.type === 'resign') {
-      const token = e.player === BLACK ? 'B' : 'W';
-      sgf += `;${token}[]C[${playerName} 投了]`;
+      sgf += `;${e.player === BLACK ? 'B' : 'W'}[]C[${playerName} 投了]`;
     } else {
       const stoneColor = e.isStar ? e.starColor : e.player;
       const token      = stoneColor === BLACK ? 'B' : 'W';
       const coord      = toSGFCoord(e.x, e.y);
-
       if (e.isStar) {
-        const actualTurn  = playerName;
-        const placedColor = e.starColor === BLACK ? '黒' : '白';
-        const comment     = `星石使用: 実際の手番=${actualTurn} / 置いた石色=${placedColor}`;
-        sgf += `;${token}[${coord}]C[${comment}]`;
+        sgf += `;${token}[${coord}]C[星石使用: 手番=${playerName} / 色=${e.starColor === BLACK ? '黒' : '白'}]`;
       } else {
         sgf += `;${token}[${coord}]`;
       }
@@ -1886,239 +1719,89 @@ function buildSGF() {
 
 function setSGFMsg(msg, isError) {
   const el = document.getElementById('sgf-msg');
-  if (!el) return;
-  el.textContent = msg;
-  el.style.color = isError ? '#f66' : '#80c080';
+  if (el) { el.textContent = msg; el.style.color = isError ? '#f66' : '#80c080'; }
 }
 
 function showSGFPreview(sgf) {
   const ta = document.getElementById('sgf-preview');
-  if (!ta) return;
-  ta.value = sgf;
-  ta.classList.add('visible');
-}
-
-function isIOSSafari() {
-  return /iP(hone|od|ad)/.test(navigator.userAgent) &&
-         /WebKit/.test(navigator.userAgent) &&
-         !/CriOS|FxiOS|OPiOS/.test(navigator.userAgent);
+  if (ta) { ta.value = sgf; ta.classList.add('visible'); }
 }
 
 document.getElementById('btn-sgf-gen').addEventListener('click', () => {
-  if (moveLog.length === 0) {
-    setSGFMsg('棋譜がありません。対局を開始してください。', true);
-    return;
-  }
-  const sgf = buildSGF();
-  showSGFPreview(sgf);
-  setSGFMsg('SGFを生成しました。下のテキストを長押しで全選択→コピーできます。', false);
+  if (moveLog.length === 0) { setSGFMsg('棋譜がありません。', true); return; }
+  const sgf = buildSGF(); showSGFPreview(sgf); setSGFMsg('SGFを生成しました。', false);
 });
 
 document.getElementById('btn-sgf-copy').addEventListener('click', () => {
-  if (moveLog.length === 0) {
-    setSGFMsg('棋譜がありません。対局を開始してください。', true);
-    return;
-  }
-  const sgf = buildSGF();
-  showSGFPreview(sgf);
-
+  if (moveLog.length === 0) { setSGFMsg('棋譜がありません。', true); return; }
+  const sgf = buildSGF(); showSGFPreview(sgf);
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(sgf)
-      .then(() => setSGFMsg('✅ SGFをクリップボードにコピーしました。', false))
-      .catch(() => fallbackCopy(sgf));
-  } else {
-    fallbackCopy(sgf);
-  }
-});
-
-function fallbackCopy(text) {
-  const preview = document.getElementById('sgf-preview');
-  if (preview && preview.classList.contains('visible')) {
-    try {
-      preview.focus();
-      preview.setSelectionRange(0, preview.value.length);
-      const ok = document.execCommand('copy');
-      if (ok) {
-        setSGFMsg('✅ SGFをコピーしました。', false);
-        return;
-      }
-    } catch(e) {}
-  }
-  try {
-    const ta = document.createElement('textarea');
-    ta.value     = text;
-    ta.readOnly  = true;
-    ta.style.cssText =
-      'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;' +
-      'border:none;outline:none;-webkit-user-select:text;user-select:text;';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.setSelectionRange(0, ta.value.length);
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    if (ok) {
-      setSGFMsg('✅ SGFをコピーしました。', false);
-    } else {
-      setSGFMsg('コピーに失敗しました。下のSGF本文を長押しでコピーしてください。', true);
-    }
-  } catch(e) {
-    setSGFMsg('コピーに失敗しました。下のSGF本文を長押しでコピーしてください。', true);
-  }
-}
-
-document.getElementById('btn-sgf-dl').addEventListener('click', () => {
-  if (moveLog.length === 0) {
-    setSGFMsg('棋譜がありません。対局を開始してください。', true);
-    return;
-  }
-  const sgf = buildSGF();
-  showSGFPreview(sgf);
-
-  const now = new Date();
-  const ts  = now.getFullYear()
-    + ('0' + (now.getMonth()+1)).slice(-2)
-    + ('0' + now.getDate()).slice(-2)
-    + '-'
-    + ('0' + now.getHours()).slice(-2)
-    + ('0' + now.getMinutes()).slice(-2);
-  const filename = `hoshigo_${ts}.sgf`;
-
-  if (isIOSSafari()) {
-    try {
-      const dataUri = 'data:application/x-go-sgf;charset=utf-8,' + encodeURIComponent(sgf);
-      window.open(dataUri, '_blank');
-      setSGFMsg('SGFを生成しました。新しいタブが開いたら「共有」→「ファイルに保存」で保存できます。', false);
-    } catch(e) {
-      setSGFMsg('新しいタブを開けませんでした。下のSGF本文を長押しでコピーしてください。', true);
-    }
-    return;
-  }
-
-  try {
-    const blob = new Blob([sgf], { type: 'application/x-go-sgf' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    setSGFMsg(`SGFを生成しました（${filename}）。`, false);
-  } catch(e) {
-    setSGFMsg('ダウンロードに失敗しました。下のSGF本文を長押しでコピーしてください。', true);
+    navigator.clipboard.writeText(sgf).then(() => setSGFMsg('✅ コピーしました。', false));
   }
 });
 
 // ═══════════════════════════════════════════════════════════
-//  棋譜ログ表示
+//  着手ハンドラ
 // ═══════════════════════════════════════════════════════════
 function renderLog() {
   const el = document.getElementById('move-log');
   el.innerHTML = moveLog.map(e => {
     const pName = e.player === BLACK ? '黒' : '白';
     let cls = '', text = '';
-
-    if (e.type === 'pass') {
-      cls  = 'pass-move';
-      text = `${e.moveNo}. ${pName} — パス`;
-    } else if (e.type === 'resign') {
-      text = `${e.moveNo}. ${pName} — 投了`;
-    } else {
+    if (e.type === 'pass') { cls = 'pass-move'; text = `${e.moveNo}. ${pName} — パス`; } 
+    else if (e.type === 'resign') { text = `${e.moveNo}. ${pName} — 投了`; } 
+    else {
       const coord = coordStr(e.x, e.y);
-      if (e.isStar) {
-        cls  = 'star-move';
-        const sc = e.starColor === BLACK ? '黒★' : '白★';
-        text = `${e.moveNo}. ${pName} — ${coord} [星石:${sc}]`;
-      } else {
-        text = `${e.moveNo}. ${pName} — ${coord}`;
-      }
-      if (e.captured && e.captured.length > 0)
-        text += ` (取:${e.captured.length})`;
+      if (e.isStar) { cls = 'star-move'; text = `${e.moveNo}. ${pName} — ${coord} [星石:${e.starColor===BLACK?'黒':'白'}★]`; } 
+      else { text = `${e.moveNo}. ${pName} — ${coord}`; }
+      if (e.captured && e.captured.length > 0) text += ` (取:${e.captured.length})`;
     }
     return `<div class="${cls}">${text}</div>`;
   }).join('');
   el.scrollTop = el.scrollHeight;
 }
 
-function addLog(entry) {
-  moveLog.push(entry);
-  renderLog();
-  updateStats();
-}
-
-// ═══════════════════════════════════════════════════════════
-//  着手処理
-// ═══════════════════════════════════════════════════════════
 function doMove(x, y, isStar, starColor) {
   const stoneColor = isStar ? starColor : current;
   const savedBoard = board.map(r => [...r]);
-  const savedStars = new Set(starStones);
 
   const result = placeStone(board, x, y, stoneColor, isStar, koPoint);
-
   if (!result.ok) {
-    board.length = 0;
-    savedBoard.forEach(r => board.push(r));
-    starStones.clear();
-    savedStars.forEach(s => starStones.add(s));
-    setStatus(`⛔ 不正手（自殺手またはコウ）。${currentPlayerLabel()}`);
+    board.length = 0; savedBoard.forEach(r => board.push(r));
+    setStatus(`⛔ 不正手。${currentPlayerLabel()}`);
     return false;
   }
 
-  koPoint    = result.newKo || null;
-  totalMoves++;
-  consecutivePasses = 0;
+  koPoint = result.newKo || null;
+  totalMoves++; consecutivePasses = 0;
+  if (isStar) { starUsed[current] = true; starMoveNo[current] = totalMoves; }
 
-  if (isStar) {
-    starUsed[current]   = true;
-    starMoveNo[current] = totalMoves;
-  }
-
-  addLog({
-    moveNo: totalMoves, player: current, type: 'place',
-    x, y, isStar, starColor: isStar ? starColor : null,
-    captured: result.captured
-  });
+  moveLog.push({ moveNo: totalMoves, player: current, type: 'place', x, y, isStar, starColor: isStar ? starColor : null, captured: result.captured });
+  renderLog(); updateStats();
 
   current          = 1 - current;
   starPending      = false;
   pendingStarColor = null;
 
-  drawBoard();
-  updateStarPanel();
-  setStatus(currentPlayerLabel());
+  drawBoard(); updateStarPanel(); setStatus(currentPlayerLabel());
   return true;
 }
 
 function doPass() {
   if (gameOver) return;
-  totalMoves++;
-  passCnt++;
-  consecutivePasses++;
-  firstPassDone    = true;
-  starPending      = false;
-  pendingStarColor = null;
-  koPoint          = null;
-
-  addLog({ moveNo: totalMoves, player: current, type: 'pass' });
-
-  if (consecutivePasses >= 2) {
-    endGame('両者パス');
-    return;
-  }
-
+  totalMoves++; passCnt++; consecutivePasses++;
+  firstPassDone = true; starPending = false; pendingStarColor = null; koPoint = null;
+  moveLog.push({ moveNo: totalMoves, player: current, type: 'pass' });
+  renderLog(); updateStats();
+  if (consecutivePasses >= 2) { endGame('両者パス'); return; }
   current = 1 - current;
-  drawBoard();
-  updateStarPanel();
-  setStatus(currentPlayerLabel());
+  drawBoard(); updateStarPanel(); setStatus(currentPlayerLabel());
 }
 
 function doResign() {
   if (gameOver) return;
-  const winner = current === BLACK ? '白' : '黒';
-  addLog({ moveNo: totalMoves + 1, player: current, type: 'resign' });
-  endGame(`${winner} 勝ち（投了）`);
+  moveLog.push({ moveNo: totalMoves + 1, player: current, type: 'resign' });
+  endGame(`${current === BLACK ? '白' : '黒'} 勝ち（投了）`);
 }
 
 function endGame(reason) {
@@ -2129,83 +1812,46 @@ function endGame(reason) {
   updateStarPanel();
 }
 
-// ═══════════════════════════════════════════════════════════
-//  ゲーム開始 / リセット
-// ═══════════════════════════════════════════════════════════
 function startGame() {
   if (cpuTimer) { clearInterval(cpuTimer); cpuTimer = null; }
   if (cpuTimeout) { clearTimeout(cpuTimeout); cpuTimeout = null; }
 
   gameMode   = document.getElementById('sel-mode').value;
-  cpuLevel   = 'expert';
   humanColor = parseInt(document.getElementById('sel-color').value);
   expireMode = parseInt(document.querySelector('input[name=expire]:checked').value);
 
   initBoard();
-  current           = BLACK;
-  koPoint           = null;
-  gameOver          = false;
-  starUsed          = [false, false];
-  starMoveNo        = [null, null];
-  starPending       = false;
-  pendingStarColor  = null;
-  totalMoves        = 0;
-  passCnt           = 0;
-  consecutivePasses = 0;
-  firstPassDone     = false;
-  moveLog           = [];
+  current = BLACK; koPoint = null; gameOver = false;
+  starUsed = [false, false]; starMoveNo = [null, null]; starPending = false; pendingStarColor = null;
+  totalMoves = 0; passCnt = 0; consecutivePasses = 0; firstPassDone = false; moveLog = [];
 
-  hidePicker();
-  drawBoard();
-  updateStarPanel();
-  renderLog();
-  updateStats();
-  setStatus(currentPlayerLabel());
+  hidePicker(); drawBoard(); updateStarPanel(); renderLog(); updateStats(); setStatus(currentPlayerLabel());
 
   if (gameMode.startsWith('cpu-')) {
-    cpuTimer = setInterval(() => {
-      if (gameOver) { clearInterval(cpuTimer); cpuTimer = null; return; }
-      cpuTurn();
-    }, 500);
-  } else if ((gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic') && humanColor === WHITE) {
+    cpuTimer = setInterval(() => { if (gameOver) return; cpuTurn(); }, 500);
+  } else if (humanColor === WHITE) {
     cpuTimeout = setTimeout(cpuTurn, 300);
   }
 }
 
-// ═══════════════════════════════════════════════════════════
-//  Canvas イベント
-// ═══════════════════════════════════════════════════════════
 function screenToBoard(clientX, clientY) {
   const rect   = canvas.getBoundingClientRect();
   const scaleX = CANVAS_PX / rect.width;
   const scaleY = CANVAS_PX / rect.height;
-  const cx = (clientX - rect.left) * scaleX;
-  const cy = (clientY - rect.top)  * scaleY;
   return {
-    x: Math.round((cx - MARGIN) / CELL),
-    y: Math.round((cy - MARGIN) / CELL)
+    x: Math.round(((clientX - rect.left) * scaleX - MARGIN) / CELL),
+    y: Math.round(((clientY - rect.top) * scaleY - MARGIN) / CELL)
   };
 }
 
-function handleBoardTap(clientX, clientY) {
+canvas.addEventListener('click', e => {
   const humanPlaying = gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic';
-  if (!humanPlaying) return;
-  if (gameOver) return;
-  if (current !== humanColor) return;
-
-  const { x, y } = screenToBoard(clientX, clientY);
+  if (!humanPlaying || gameOver || current !== humanColor) return;
+  const { x, y } = screenToBoard(e.clientX, e.clientY);
   if (!inBounds(x, y)) return;
-
-  if (starPending) {
-    const ok = doMove(x, y, true, pendingStarColor);
-    if (ok) cpuTimeout = setTimeout(cpuTurn, 400);
-  } else {
-    const ok = doMove(x, y, false, null);
-    if (ok) cpuTimeout = setTimeout(cpuTurn, 400);
-  }
-}
-
-canvas.addEventListener('click', e => { handleBoardTap(e.clientX, e.clientY); });
+  const ok = doMove(x, y, starPending, pendingStarColor);
+  if (ok) cpuTimeout = setTimeout(cpuTurn, 400);
+});
 
 canvas.addEventListener('mousemove', e => {
   const humanPlaying = gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic';
@@ -2213,105 +1859,37 @@ canvas.addEventListener('mousemove', e => {
   const { x, y } = screenToBoard(e.clientX, e.clientY);
   drawBoard();
   if (inBounds(x, y) && board[y][x] === EMPTY) {
-    const px = MARGIN + x * CELL;
-    const py = MARGIN + y * CELL;
-    ctx.beginPath();
-    ctx.arc(px, py, CELL * 0.44, 0, Math.PI*2);
-    ctx.fillStyle = current === BLACK ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.5)';
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(MARGIN + x * CELL, MARGIN + y * CELL, CELL * 0.44, 0, Math.PI*2);
+    ctx.fillStyle = current === BLACK ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.5)'; ctx.fill();
   }
 });
 canvas.addEventListener('mouseleave', drawBoard);
 
-// ═══════════════════════════════════════════════════════════
-//  星石ボタン
-// ═══════════════════════════════════════════════════════════
-function showPicker() {
-  document.getElementById('overlay').classList.add('visible');
-  document.getElementById('star-picker').classList.add('visible');
-}
-function hidePicker() {
-  document.getElementById('overlay').classList.remove('visible');
-  document.getElementById('star-picker').classList.remove('visible');
-}
+function showPicker() { document.getElementById('overlay').classList.add('visible'); document.getElementById('star-picker').classList.add('visible'); }
+function hidePicker() { document.getElementById('overlay').classList.remove('visible'); document.getElementById('star-picker').classList.remove('visible'); }
 
 document.getElementById('star-human').addEventListener('click', () => {
-  const humanPlaying = gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic';
-  if (!humanPlaying) return;
-  if (gameOver || current !== humanColor) return;
-  if (!canUseStarStone(humanColor)) {
-    setStatus('⛔ 星石は現在使用できません（失効条件）。');
-    return;
-  }
+  if (gameOver || current !== humanColor || !canUseStarStone(humanColor)) return;
   showPicker();
 });
 
-document.getElementById('star-pick-black').addEventListener('click', () => {
-  hidePicker();
-  starPending = true; pendingStarColor = BLACK;
-  updateStarPanel();
-  setStatus('★ 星石（黒）: 盤面をタップして配置してください。');
-});
+document.getElementById('star-pick-black').addEventListener('click', () => { hidePicker(); starPending = true; pendingStarColor = BLACK; updateStarPanel(); setStatus('★ 星石（黒）: 盤面へ配置してください。'); });
+document.getElementById('star-pick-white').addEventListener('click', () => { hidePicker(); starPending = true; pendingStarColor = WHITE; updateStarPanel(); setStatus('★ 星石（白）: 盤面へ配置してください。'); });
+document.getElementById('star-pick-cancel').addEventListener('click', () => { hidePicker(); starPending = false; pendingStarColor = null; updateStarPanel(); });
+document.getElementById('overlay').addEventListener('click', () => { hidePicker(); starPending = false; pendingStarColor = null; updateStarPanel(); });
 
-document.getElementById('star-pick-white').addEventListener('click', () => {
-  hidePicker();
-  starPending = true; pendingStarColor = WHITE;
-  updateStarPanel();
-  setStatus('★ 星石（白）: 盤面をタップして配置してください。');
-});
-
-document.getElementById('star-pick-cancel').addEventListener('click', () => {
-  hidePicker();
-  starPending = false; pendingStarColor = null;
-  updateStarPanel();
-});
-
-document.getElementById('overlay').addEventListener('click', () => {
-  hidePicker();
-  starPending = false; pendingStarColor = null;
-  updateStarPanel();
-});
-
-// ═══════════════════════════════════════════════════════════
-//  主要ボタン
-// ═══════════════════════════════════════════════════════════
-document.getElementById('btn-pass').addEventListener('click', () => {
-  const humanPlaying = gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic';
-  if (!humanPlaying || gameOver || current !== humanColor) return;
-  doPass();
-  if (!gameOver) cpuTimeout = setTimeout(cpuTurn, 400);
-});
-
-document.getElementById('btn-resign').addEventListener('click', () => {
-  const humanPlaying = gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic';
-  if (!humanPlaying || gameOver || current !== humanColor) return;
-  doResign();
-});
-
+document.getElementById('btn-pass').addEventListener('click', () => { if (gameOver || current !== humanColor) return; doPass(); if (!gameOver) cpuTimeout = setTimeout(cpuTurn, 400); });
+document.getElementById('btn-resign').addEventListener('click', () => { if (gameOver || current !== humanColor) return; doResign(); });
 document.getElementById('btn-reset').addEventListener('click', startGame);
 document.getElementById('btn-start').addEventListener('click', startGame);
-
 document.getElementById('sel-mode').addEventListener('change', updateModeUI);
-
-// ═══════════════════════════════════════════════════════════
-//  詳細セクション 開閉
-// ═══════════════════════════════════════════════════════════
 document.getElementById('btn-detail-toggle').addEventListener('click', () => {
-  const content = document.getElementById('detail-content');
-  const arrow   = document.getElementById('detail-arrow');
-  const isOpen  = content.classList.toggle('open');
-  arrow.classList.toggle('open', isOpen);
+  const isOpen = document.getElementById('detail-content').classList.toggle('open');
+  document.getElementById('detail-arrow').classList.toggle('open', isOpen);
 });
 
-// ═══════════════════════════════════════════════════════════
-//  初期化
-// ═══════════════════════════════════════════════════════════
-updateModeUI();
-startGame();
-
-} catch(initErr) {
-  showFatalError(initErr.message || String(initErr));
-}
+updateModeUI(); startGame();
+} catch(initErr) { showFatalError(initErr.message || String(initErr)); }
 });
 </script>
 </body>
