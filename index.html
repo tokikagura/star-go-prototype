@@ -1,9 +1,15 @@
 <!DOCTYPE html>
+<!--
+  星囲碁 / Hoshigo Prototype v1.0
+  Concept & Design: 刻神楽 (_tokikagura)
+  Implementation support: AI-assisted prototyping
+  License: Prototype / private experimental build
+-->
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 プロトタイプ</title>
+  <title>星囲碁 プロトタイプ v1.0</title>
   <style>
 /* ════════════════════════════════
    リセット・基礎
@@ -294,6 +300,7 @@ label { font-size: 0.82rem; cursor: pointer; }
   resize: vertical;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  -webkit-touch-callout: default;
   word-break: break-all;
   white-space: pre-wrap;
   -webkit-user-select: text;
@@ -305,7 +312,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 <body>
 <div id="app">
 
-  <div id="title-bar">★ 星囲碁 プロトタイプ</div>
+  <div id="title-bar">★ 星囲碁 プロトタイプ v1.0</div>
 
   <!-- 手番・状態 -->
   <div id="status-bar">準備中…</div>
@@ -622,8 +629,8 @@ function neighbors(x, y) {
   return [[x-1,y],[x+1,y],[x,y-1],[x,y+1]].filter(([nx,ny]) => inBounds(nx,ny));
 }
 
-function getGroup(x, y) {
-  const color     = board[y][x];
+function getGroup(brd, x, y) {
+  const color     = brd[y][x];
   const stones    = [];
   const liberties = new Set();
   const visited   = new Set();
@@ -636,9 +643,9 @@ function getGroup(x, y) {
     visited.add(key);
     stones.push([cx, cy]);
     for (const [nx, ny] of neighbors(cx, cy)) {
-      if (board[ny][nx] === EMPTY) {
+      if (brd[ny][nx] === EMPTY) {
         liberties.add(`${nx},${ny}`);
-      } else if (board[ny][nx] === color && !visited.has(`${nx},${ny}`)) {
+      } else if (brd[ny][nx] === color && !visited.has(`${nx},${ny}`)) {
         stack.push([nx, ny]);
       }
     }
@@ -658,7 +665,7 @@ function placeStone(brd, x, y, color, isStar, koP) {
 
   for (const [nx, ny] of neighbors(x, y)) {
     if (brd[ny][nx] === opp) {
-      const g = getGroup(nx, ny);
+      const g = getGroup(brd, nx, ny);
       if (g.liberties.size === 0) {
         for (const [sx, sy] of g.stones) {
           brd[sy][sx] = EMPTY;
@@ -669,7 +676,7 @@ function placeStone(brd, x, y, color, isStar, koP) {
     }
   }
 
-  const self = getGroup(x, y);
+  const self = getGroup(brd, x, y);
   if (self.liberties.size === 0) {
     brd[y][x] = EMPTY;
     if (isStar) starStones.delete(`${x},${y}`);
@@ -730,29 +737,12 @@ function canUseStarStone(playerColor) {
 
 // その手で取れる相手石の数を返す（盤を変更しない）
 function captureCount(x, y, color) {
-  const opp = 1 - color;
-  let count = 0;
-  const tmp       = board.map(r => [...r]);
-  const savedStar = new Set(starStones);
-  tmp[y][x] = color;
-  // starStones は変えなくてよい（呼吸点だけ見る）
-  for (const [nx, ny] of neighbors(x, y)) {
-    if (tmp[ny][nx] === opp) {
-      const g = getGroup(nx, ny); // getGroup は board を参照するので tmp で差し替える
-      // getGroup は直接 board を見ているため、一時的に board を書き換える
-    }
-  }
-  // ──→ board を直接使う版で実装（placeStone のコピーを使う）
-  tmp[y][x] = EMPTY; // 元に戻す
-  starStones.clear();
-  savedStar.forEach(s => starStones.add(s));
-
-  // board をコピーして実際に置いて確認
+  // board をコピーして実際に置いて確認（実盤は変更しない）
   const brd = board.map(r => [...r]);
-  const savedStar2 = new Set(starStones);
+  const savedStar = new Set(starStones);
   const result = placeStone(brd, x, y, color, false, koPoint);
   starStones.clear();
-  savedStar2.forEach(s => starStones.add(s));
+  savedStar.forEach(s => starStones.add(s));
   return result.ok ? result.captured.length : 0;
 }
 
@@ -765,7 +755,7 @@ function getAtariPoints(color) {
       if (board[y][x] !== color) continue;
       const key = `${x},${y}`;
       if (visited.has(key)) continue;
-      const g = getGroup(x, y);
+      const g = getGroup(board, x, y);
       g.stones.forEach(([sx, sy]) => visited.add(`${sx},${sy}`));
       if (g.liberties.size === 1) {
         // この連の唯一の呼吸点（逃げ先）を登録
@@ -984,7 +974,6 @@ function updateStarPanel() {
 function updateModeUI() {
   const mode = document.getElementById('sel-mode').value;
   const rowCpuLevel  = document.getElementById('row-cpu-level');
-  const rowHumanColor = document.querySelector('.setting-row:has(#sel-color)');
   rowCpuLevel.style.display = mode === 'cpu-cpu' ? '' : 'none';
 }
 
@@ -1020,7 +1009,7 @@ function buildSGF() {
     'SGF export prioritizes board reproduction. ' +
     `Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
 
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:0.7]C[${rootComment}]`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.0]C[${rootComment}]`;
 
   // ── 手順ノード ──
   for (const e of moveLog) {
@@ -1410,12 +1399,6 @@ function handleBoardTap(clientX, clientY) {
 }
 
 canvas.addEventListener('click', e => { handleBoardTap(e.clientX, e.clientY); });
-
-canvas.addEventListener('touchend', e => {
-  e.preventDefault();
-  const t = e.changedTouches[0];
-  handleBoardTap(t.clientX, t.clientY);
-}, { passive: false });
 
 canvas.addEventListener('mousemove', e => {
   const humanPlaying = gameMode === 'human-random' || gameMode === 'human-simple';
