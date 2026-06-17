@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  星囲碁 / Hoshi Go Prototype v1.3
+  星囲碁 / Hoshi Go Prototype v1.3.1
   Concept & Design: 刻神楽 (_tokikagura)
   Implementation support: AI-assisted prototyping
   License: Custom Experimental License (All Rights Reserved)
@@ -11,7 +11,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 | Hoshi Go Prototype v1.3</title>
+  <title>星囲碁 | Hoshi Go Prototype v1.3.1</title>
   <style>
 /* ════════════════════════════════
    Reset & Base
@@ -314,7 +314,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 <body>
 <div id="app">
 
-  <div id="title-bar">★ 星囲碁 | Hoshi Go v1.3</div>
+  <div id="title-bar">★ 星囲碁 | Hoshi Go v1.3.1</div>
 
   <!-- Game Status -->
   <div id="status-bar">Initializing...</div>
@@ -1003,6 +1003,9 @@ function topMoves(brd, moves, color, koP, moveNo, limit) {
     .slice(0, limit);
 }
 
+// ═══════════════════════════════════════════════════════════
+//  MCTS Search & Lookahead
+// ═══════════════════════════════════════════════════════════
 function lookaheadScore(x, y, color) {
   const opp = 1 - color;
   const moveNo = totalMoves + 1;
@@ -1064,10 +1067,11 @@ function chooseStarUse(pick, color, moveNo) {
 
 
 // ═══════════════════════════════════════════════════════════
-//  ★ Expert CPU v1.3 - Core Enhancements Added
+//  ★ Expert CPU v1.3.1 - Core Enhancements Added
 //  ① Automatic Diagonal-Chain (Kosumi Defect) Tracking & Penalization
 //  ② Cut/Atari Vulnerability Point Pre-computation Safeguards
 //  ③ Gatekeeper Subroutine for Star Stone Conservation on Normal Escapes
+//  ④ Anti-Zombie Subroutine: Prevents meaningless invasion when crushed
 // ═══════════════════════════════════════════════════════════
 
 function expertPhase(moveNo) {
@@ -1602,6 +1606,31 @@ function cpuTurn() {
   if (gameOver) return;
   const ai = aiForCurrentColor();
   if (ai === 'human') return;
+
+  // ─── 【v1.3.1 パッチ】 ゾンビ地荒らし防止ガードレール（大人の引き際） ───
+  // 大石が取られて盤上に自分の石がほとんど残っておらず（4個以下）、かつ形勢が壊滅的な場合、
+  // 敵の確定地を荒らす見苦しい手を打つ前に、潔く「投了（Resign）」を選んで美しく終局させる。
+  if (ai === 'expert' && totalMoves > 12) {
+    let myStones = 0;
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        if (board[y][x] === current) myStones++;
+      }
+    }
+    if (myStones <= 4) {
+      try {
+        const score = expertEvaluateBoard(board, current);
+        if (score < -240) {
+          doResign();
+          return;
+        }
+      } catch (e) {
+        doResign();
+        return;
+      }
+    }
+  }
+
   const legal = getLegalMoves(board, current, koPoint);
   if (legal.length === 0) { doPass(); return; }
 
@@ -1681,8 +1710,8 @@ function toSGFCoord(x, y) { return String.fromCharCode(97 + x) + String.fromChar
 function buildSGF() {
   const expireLabel = ['No Expiry', 'Locked at Empty<=25', 'Locked after Pass'][expireMode] || '';
   const modeLabel   = gameMode === 'human-expert' ? 'Human vs Expert' : gameMode === 'human-advanced' ? 'Human vs Advanced' : gameMode === 'human-classic' ? 'Human vs Classic' : 'CPU Match';
-  const rootComment = `星囲碁 / Hoshi Go v1.3. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.3]C[${rootComment}]`;
+  const rootComment = `星囲碁 / Hoshi Go v1.3.1. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.3.1]C[${rootComment}]`;
 
   for (const e of moveLog) {
     const playerName = e.player === BLACK ? 'Black' : 'White';
