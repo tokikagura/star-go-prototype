@@ -1,18 +1,20 @@
 <!DOCTYPE html>
 <!--
-  星囲碁 / Hoshigo Prototype v1.2.1
+  星囲碁 / Hoshi Go Prototype v1.3
   Concept & Design: 刻神楽 (_tokikagura)
   Implementation support: AI-assisted prototyping
-  License: Prototype / private experimental build
+  License: Custom Experimental License (All Rights Reserved)
+  - You are welcome to study, play, and modify this code for personal/educational experiments.
+  - If you forge a cool mod or branch out, please drop me a line! Twitter: @_tokikagura
 -->
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 プロトタイプ v1.2.1</title>
+  <title>星囲碁 | Hoshi Go Prototype v1.3</title>
   <style>
 /* ════════════════════════════════
-   リreset・基礎
+   Reset & Base
 ════════════════════════════════ */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -27,7 +29,7 @@ body {
 }
 
 /* ════════════════════════════════
-   レイアウト: メイン列
+   Layout: Main Column
 ════════════════════════════════ */
 #app {
   display: flex;
@@ -40,7 +42,7 @@ body {
 }
 
 /* ════════════════════════════════
-   タイトル
+   Title Bar
 ════════════════════════════════ */
 #title-bar {
   font-size: 1.1rem;
@@ -51,7 +53,7 @@ body {
 }
 
 /* ════════════════════════════════
-   ステータスバー
+   Status Bar
 ════════════════════════════════ */
 #status-bar {
   width: 100%;
@@ -65,7 +67,7 @@ body {
 #status-bar span { font-weight: bold; color: #ffd700; }
 
 /* ════════════════════════════════
-   盤面
+   Goban Board
 ════════════════════════════════ */
 #board-wrap {
   width: 100%;
@@ -83,7 +85,7 @@ body {
 }
 
 /* ════════════════════════════════
-   星石パネル（常時表示）
+   Star Stone Panel
 ════════════════════════════════ */
 #star-panel {
   width: 100%;
@@ -109,7 +111,7 @@ body {
 .star-label        { font-size: 0.8rem; color: #bbb; }
 
 /* ════════════════════════════════
-   主要ボタン行（常時表示）
+   Main Action Buttons
 ════════════════════════════════ */
 #main-btns {
   width: 100%;
@@ -119,7 +121,7 @@ body {
 #main-btns button { flex: 1; }
 
 /* ════════════════════════════════
-   ボタン共通スタイル
+   Button Common Styles
 ════════════════════════════════ */
 button.action {
   padding: 9px 10px;
@@ -139,7 +141,7 @@ button.action.primary { background: #0f3460; border-color: #4a7abc; color: #fff;
 button.action.danger  { background: #5a1a1a; border-color: #aa4444; color: #fff; }
 
 /* ════════════════════════════════
-   折りたたみ「詳細」セクション
+   Collapsible Details Section
 ════════════════════════════════ */
 #detail-section {
   width: 100%;
@@ -174,7 +176,7 @@ button.action.danger  { background: #5a1a1a; border-color: #aa4444; color: #fff;
 }
 #detail-content.open { display: flex; }
 
-/* ────── 詳細内のカード ────── */
+/* ────── Card Blocks ────── */
 .card {
   background: #16213e;
   border: 1px solid #333;
@@ -189,7 +191,7 @@ button.action.danger  { background: #5a1a1a; border-color: #aa4444; color: #fff;
   margin-bottom: 8px;
 }
 
-/* ────── 統計グリッド ────── */
+/* ────── Stats Grid ────── */
 #stats-grid {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -199,7 +201,7 @@ button.action.danger  { background: #5a1a1a; border-color: #aa4444; color: #fff;
 #stats-grid .key { color: #888; white-space: nowrap; }
 #stats-grid .val { color: #ffd700; }
 
-/* ────── 棋譜ログ ────── */
+/* ────── Move Log ────── */
 #move-log {
   font-size: 0.78rem;
   max-height: 240px;
@@ -211,7 +213,7 @@ button.action.danger  { background: #5a1a1a; border-color: #aa4444; color: #fff;
 #move-log .star-move { color: #ffd700; }
 #move-log .pass-move { color: #80c080; }
 
-/* ────── 設定 ────── */
+/* ────── Settings ────── */
 select {
   background: #2a2a4a;
   color: #e0e0e0;
@@ -232,7 +234,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 }
 
 /* ════════════════════════════════
-   星石色選択ポップアップ
+   Star Stone Color Picker Popup
 ════════════════════════════════ */
 #star-picker {
   display: none;
@@ -266,7 +268,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 #star-pick-cancel { background: #444; color: #eee; margin-top: 10px; width: 100%; }
 
 /* ════════════════════════════════
-   オーバーレイ（ポップアップ背景）
+   Overlay Background
 ════════════════════════════════ */
 #overlay {
   display: none;
@@ -281,10 +283,10 @@ label { font-size: 0.82rem; cursor: pointer; }
 #overlay.visible { display: block; }
 
 /* ════════════════════════════════
-   SGF プレビュー textarea
+   SGF Preview Textarea
 ════════════════════════════════ */
 #sgf-preview {
-  display: none;          /* SGF生成後に表示 */
+  display: none;
   width: 100%;
   min-height: 120px;
   max-height: 200px;
@@ -312,114 +314,114 @@ label { font-size: 0.82rem; cursor: pointer; }
 <body>
 <div id="app">
 
-  <div id="title-bar">★ 星囲碁 プロトタイプ v1.2.1</div>
+  <div id="title-bar">★ 星囲碁 | Hoshi Go v1.3</div>
 
-  <!-- 手番・状態 -->
-  <div id="status-bar">準備中…</div>
+  <!-- Game Status -->
+  <div id="status-bar">Initializing...</div>
 
-  <!-- 盤面 -->
+  <!-- Board Wrap -->
   <div id="board-wrap">
     <canvas id="board-canvas"></canvas>
   </div>
 
-  <!-- 星石状態（人間 vs CPU のみ表示） -->
+  <!-- Star Stone Panel -->
   <div id="star-panel">
     <div class="star-row">
-      <span class="star-badge" id="star-human" title="星石を使う">★</span>
-      <span class="star-label" id="star-human-label">あなたの星石（未使用）</span>
+      <span class="star-badge" id="star-human" title="Use Star Stone">★</span>
+      <span class="star-label" id="star-human-label">Your Star Stone (Unused)</span>
     </div>
   </div>
 
-  <!-- 主要ボタン -->
+  <!-- Action Buttons -->
   <div id="main-btns">
-    <button class="action" id="btn-pass">パス</button>
-    <button class="action danger" id="btn-resign">投了</button>
-    <button class="action" id="btn-reset">リセット</button>
+    <button class="action" id="btn-pass">Pass</button>
+    <button class="action danger" id="btn-resign">Resign</button>
+    <button class="action" id="btn-reset">Reset</button>
   </div>
 
-  <!-- 詳細セクション（折りたたみ） -->
+  <!-- Collapsible Details Section -->
   <div id="detail-section">
 
     <button id="btn-detail-toggle">
-      詳細（統計・棋譜・設定）
+      Details (Stats, Log, Settings)
       <span id="detail-arrow">▼</span>
     </button>
 
     <div id="detail-content">
 
-      <!-- モード設定 -->
+      <!-- Game Mode Settings -->
       <div class="card">
-        <h2>モード設定</h2>
+        <h2>Game Mode</h2>
         <div class="setting-row">
-          <label>モード:</label>
+          <label>Mode:</label>
           <select id="sel-mode">
-            <option value="human-expert" selected>人間 vs CPU [Expert]</option>
-            <option value="human-advanced">人間 vs CPU [Advanced]</option>
-            <option value="human-classic">人間 vs CPU [Classic]</option>
+            <option value="human-expert" selected>Human vs CPU [Expert]</option>
+            <option value="human-advanced">Human vs CPU [Advanced]</option>
+            <option value="human-classic">Human vs CPU [Classic]</option>
             <option value="cpu-advanced-expert">CPU [Advanced] vs CPU [Expert]</option>
           </select>
         </div>
         <div class="setting-row" id="row-cpu-level" style="display:none;">
-          <label>CPU設定:</label>
+          <label>CPU Level:</label>
           <span style="font-size:0.82rem;color:#aaa;">Classic / Advanced / Expert</span>
         </div>
         <div class="setting-row">
-          <label>人間の色:</label>
+          <label>Your Color:</label>
           <select id="sel-color">
-            <option value="0">黒</option>
-            <option value="1">白</option>
+            <option value="0">黒 (Black)</option>
+            <option value="1">白 (White)</option>
           </select>
         </div>
         <div style="margin-top:10px;">
-          <button class="action primary" id="btn-start">ゲーム開始</button>
+          <button class="action primary" id="btn-start">Start Game</button>
         </div>
       </div>
 
-      <!-- 失効条件 -->
+      <!-- Star Stone Expiry Rule -->
       <div class="card">
-        <h2>星石 失効条件</h2>
+        <h2>Star Stone Expiry</h2>
         <div class="setting-row">
           <input type="radio" name="expire" id="exp0" value="0" checked>
-          <label for="exp0">1. 失効なし</label>
+          <label for="exp0">1. No Expiry</label>
         </div>
         <div class="setting-row">
           <input type="radio" name="expire" id="exp1" value="1">
-          <label for="exp1">2. 空点数 ≤25 で使用不可</label>
+          <label for="exp1">2. Locked when Empty Squares ≤ 25</label>
         </div>
         <div class="setting-row">
           <input type="radio" name="expire" id="exp2" value="2">
-          <label for="exp2">3. 初回パス後に使用不可</label>
+          <label for="exp2">3. Locked after First Pass</label>
         </div>
       </div>
 
-      <!-- 統計 -->
+      <!-- Game Stats -->
       <div class="card">
-        <h2>統計</h2>
+        <h2>Statistics</h2>
         <div id="stats-grid">
-          <span class="key">総手数</span>        <span class="val" id="st-moves">0</span>
-          <span class="key">パス回数</span>       <span class="val" id="st-pass">0</span>
-          <span class="key">黒 星石使用手</span>  <span class="val" id="st-star-b">—</span>
-          <span class="key">白 星石使用手</span>  <span class="val" id="st-star-w">—</span>
+          <span class="key">Total Moves</span>    <span class="val" id="st-moves">0</span>
+          <span class="key">Pass Count</span>     <span class="val" id="st-pass">0</span>
+          <span class="key">Black Star Move</span> <span class="val" id="st-star-b">—</span>
+          <span class="key">White Star Move</span> <span class="val" id="st-star-w">—</span>
         </div>
       </div>
 
-      <!-- 棋譜 -->
+      <!-- Move Log -->
       <div class="card">
-        <h2>棋譜ログ</h2>
+        <h2>Move Log</h2>
         <div id="move-log"></div>
       </div>
 
-      <!-- SGF出力 -->
+      <!-- SGF Export Panel -->
       <div class="card">
-        <h2>SGF出力</h2>
+        <h2>SGF Export</h2>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-          <button class="action" id="btn-sgf-gen">SGFを生成</button>
-          <button class="action" id="btn-sgf-copy">SGFをコピー</button>
-          <button class="action" id="btn-sgf-dl">SGFをダウンロード</button>
+          <button class="action" id="btn-sgf-gen">Generate SGF</button>
+          <button class="action" id="btn-sgf-copy">Copy SGF</button>
+          <button class="action" id="btn-sgf-dl">Download SGF</button>
         </div>
         <div id="sgf-msg" style="font-size:0.78rem;color:#80c080;min-height:1.4em;margin-bottom:4px;"></div>
         <textarea id="sgf-preview" readonly
-          placeholder="「SGFを生成」を押すとここに表示されます。長押しで全選択→コピーできます。"
+          placeholder="SGF data will be generated here. Long press to select all and copy."
         ></textarea>
       </div>
 
@@ -428,29 +430,29 @@ label { font-size: 0.82rem; cursor: pointer; }
 
 </div><!-- /app -->
 
-<!-- 星石色選択ポップアップ -->
+<!-- Star Picker Popup -->
 <div id="overlay"></div>
 <div id="star-picker">
-  <p>★ 星石の色を選択</p>
+  <p>★ Select Star Stone Color</p>
   <div class="pick-row">
-    <button id="star-pick-black">⚫ 黒</button>
-    <button id="star-pick-white">⚪ 白</button>
+    <button id="star-pick-black">⚫ Black</button>
+    <button id="star-pick-white">⚪ White</button>
   </div>
-  <button id="star-pick-cancel">キャンセル</button>
+  <button id="star-pick-cancel">Cancel</button>
 </div>
 
 <script>
 // ═══════════════════════════════════════════════════════════
-//  エラー画面表示ヘルパー
+//  Fatal Error Helper
 // ═══════════════════════════════════════════════════════════
 function showFatalError(msg) {
   try {
     const sb = document.getElementById('status-bar');
-    if (sb) sb.innerHTML = '<span style="color:#ff6666">⛔ 初期化エラー: ' + msg + '</span>';
+    if (sb) sb.innerHTML = '<span style="color:#ff6666">⛔ Initialization Error: ' + msg + '</span>';
   } catch(e) {}
   const errDiv = document.createElement('div');
   errDiv.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#5a0000;color:#fff;padding:12px 16px;font-size:0.9rem;z-index:9999;white-space:pre-wrap;word-break:break-all;';
-  errDiv.textContent = '⛔ 初期化エラー:\n' + msg;
+  errDiv.textContent = '⛔ Initialization Error:\n' + msg;
   document.body.insertBefore(errDiv, document.body.firstChild);
 }
 
@@ -460,13 +462,13 @@ window.onerror = function(message, source, lineno, colno, error) {
 };
 
 // ═══════════════════════════════════════════════════════════
-//  DOM 読み込み完了後に全処理を開始
+//  Main Initialization
 // ═══════════════════════════════════════════════════════════
 window.addEventListener('DOMContentLoaded', function() {
 try {
 
 // ═══════════════════════════════════════════════════════════
-//  定数
+//  Constants
 // ═══════════════════════════════════════════════════════════
 const SIZE      = 9;
 const CELL      = 52;
@@ -477,7 +479,7 @@ const BLACK = 0;
 const WHITE = 1;
 const EMPTY = -1;
 
-// ─── スコア定数 ───
+// ─── Score Weights ───
 const SCORE_CAPTURE        = 130;
 const SCORE_ESCAPE_ATARI   = 110;
 const SCORE_NEAR_STONE     =  14;
@@ -501,17 +503,17 @@ const EXPERT_MCTS_DEPTH = 36;
 const EXPERT_MCTS_TOP_K = 5;
 
 // ═══════════════════════════════════════════════════════════
-//  Canvas セットアップ
+//  Canvas Layout
 // ═══════════════════════════════════════════════════════════
 const canvas = document.getElementById('board-canvas');
-if (!canvas) throw new Error('board-canvas 要素が見つかりません');
+if (!canvas) throw new Error('board-canvas not found');
 const ctx = canvas.getContext('2d');
-if (!ctx) throw new Error('Canvas 2D コンテキストを取得できません');
+if (!ctx) throw new Error('Canvas 2D context failed');
 canvas.width  = CANVAS_PX;
 canvas.height = CANVAS_PX;
 
 // ═══════════════════════════════════════════════════════════
-//  ゲーム状態
+//  Game State Variables
 // ═══════════════════════════════════════════════════════════
 let board    = [];
 let current  = BLACK;
@@ -539,7 +541,7 @@ let cpuTimer = null;
 let cpuTimeout = null;
 
 // ═══════════════════════════════════════════════════════════
-//  盤面描画
+//  Drawing System
 // ═══════════════════════════════════════════════════════════
 function drawBoard() {
   ctx.fillStyle = '#c8a96e';
@@ -625,7 +627,7 @@ function drawStone(x, y, color) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  囲碁コアロジック
+//  Core Go Rules Engine
 // ═══════════════════════════════════════════════════════════
 function initBoard() {
   board = Array.from({ length: SIZE }, () => Array(SIZE).fill(EMPTY));
@@ -1062,10 +1064,10 @@ function chooseStarUse(pick, color, moveNo) {
 
 
 // ═══════════════════════════════════════════════════════════
-//  ★ Expert CPU v1.2.1 - 3大矯正コア手術完了版
-//  ① ジグザグなみ縫い(コスミ数珠繋ぎ)自動検知累積ペナルティ
-//  ② 相手から一撃で切断・アタリにされる「分断の急所」脆弱性検知
-//  ③ 通常石で安全に生還できるアタリなら星石を温存するガードレール
+//  ★ Expert CPU v1.3 - Core Enhancements Added
+//  ① Automatic Diagonal-Chain (Kosumi Defect) Tracking & Penalization
+//  ② Cut/Atari Vulnerability Point Pre-computation Safeguards
+//  ③ Gatekeeper Subroutine for Star Stone Conservation on Normal Escapes
 // ═══════════════════════════════════════════════════════════
 
 function expertPhase(moveNo) {
@@ -1083,7 +1085,6 @@ function expertAnchorValue(x, y) {
   return v;
 }
 
-// 【矯正ギミック①】ジグザグ手芸部なみ縫い(コスミ単独連)の最大長を数え上げて強烈に減点する
 function measureDiagonalChain(brd, startX, startY, color, visitedGlobal) {
   const stack = [[startX, startY]];
   const localChain = [];
@@ -1097,12 +1098,10 @@ function measureDiagonalChain(brd, startX, startY, color, visitedGlobal) {
     visitedGlobal.add(k);
     localChain.push([cx, cy]);
     
-    // 斜め4方向の接続を走査
     const diags = [[cx-1, cy-1], [cx+1, cy-1], [cx-1, cy+1], [cx+1, cy+1]];
     for (const [nx, ny] of diags) {
       if (!inBounds(nx, ny) || brd[ny][nx] !== color) continue;
       
-      // クリティカル：縦横に正規の連結が「ない」独立したコスミ関係か検証
       const nk = `${nx},${ny}`;
       if (visitedLocal.has(nk)) continue;
       
@@ -1124,7 +1123,6 @@ function computeDiagonalSewingPenalty(brd, color) {
     for (let x = 0; x < SIZE; x++) {
       if (brd[y][x] === color && !visitedGlobal.has(`${x},${y}`)) {
         const chainLen = measureDiagonalChain(brd, x, y, color, visitedGlobal);
-        // コスミ（斜め繋ぎ）単独の長さが3を超えると、スカスカの重欠陥形として破滅的なペナルティ
         if (chainLen >= 3) {
           totalPenalty -= (chainLen * 110); 
         }
@@ -1134,7 +1132,6 @@ function computeDiagonalSewingPenalty(brd, color) {
   return totalPenalty;
 }
 
-// 【矯正ギミック②】相手から見て一撃で切断・アタリにされる「分断の急所・隙間」の脆弱性を探る
 function computeVulnerabilityScore(brd, color) {
   const opp = 1 - color;
   let vulnerability = 0;
@@ -1143,24 +1140,20 @@ function computeVulnerabilityScore(brd, color) {
     for (let x = 0; x < SIZE; x++) {
       if (brd[y][x] !== EMPTY) continue;
       
-      // 相手(敵)がここに割り込んできた場合、自分の石がアタリに叩き落とされるかシミュレーション
       const testBrd = cloneBoard(brd);
       const res = placeStonePure(testBrd, x, y, opp, null);
       if (res.ok && res.captured.length > 0) {
-        // すでに石が抜かれる急所を放置している＝激ヤバ
         vulnerability -= (res.captured.length * 150);
       }
       
-      // 周囲の自分の石の呼吸点をチェック
       const myNeighbors = neighbors(x, y).filter(([nx, ny]) => brd[ny][nx] === color);
       if (myNeighbors.length >= 2) {
-        // ここを敵に占領されると分断される「急所」
         let dangerousGap = false;
         for (const [mx, my] of myNeighbors) {
           const g = getGroup(brd, mx, my);
           if (g.liberties.size <= 2) dangerousGap = true; 
         }
-        if (dangerousGap) vulnerability -= 85; // 隙間を放置していることへの恐怖心
+        if (dangerousGap) vulnerability -= 85;
       }
     }
   }
@@ -1238,7 +1231,7 @@ function expertTerritoryMoveShape(brd, x, y, color, moveNo) {
   let score = 0;
 
   score += expertAnchorValue(x, y);
-  if (r1.own >= 3 && r1.opp === 0) score -= 85; // 団子石を嫌う心は残す
+  if (r1.own >= 3 && r1.opp === 0) score -= 85;
   
   if (phase === 'opening') {
     const q = quadrantOf(x, y);
@@ -1263,9 +1256,8 @@ function expertEvaluateBoard(brd, color) {
   score += expertGroupScore(brd, color) * 1.45;
   score -= expertGroupScore(brd, opp) * 1.40;
   
-  // 🧠 【新脳細胞の直結】ジグザグなみ縫いと脆弱性のペナルティをボード全体の評価にガツンと反映
   score += computeDiagonalSewingPenalty(brd, color);
-  score -= computeDiagonalSewingPenalty(brd, opp) * 0.90; // 相手のジグザグも咎めたい
+  score -= computeDiagonalSewingPenalty(brd, opp) * 0.90;
   score += computeVulnerabilityScore(brd, color);
   
   return score;
@@ -1476,23 +1468,19 @@ function expertOpeningBook(legalMoves, color, moveNo) {
   return best;
 }
 
-// 【矯正ギミック③】通常の石で100%安全にアタリを逃げられるなら星石をケチる「ガードレール機能」
 function chooseExpertStarUse(pick, color, moveNo) {
   const opp = 1 - color;
   if (!canUseStarStone(color) || totalMoves < 10) return { useStar: false, starColor: color };
   
-  // ── 🛡️ ガードレール判定の開始 ──
   const testBrd = cloneBoard(board);
   const testRes = placeStonePure(testBrd, pick.x, pick.y, color, koPoint);
   if (testRes.ok) {
     const testGroup = getGroup(testBrd, pick.x, pick.y);
-    // 通常手（普通の石）を置くだけで呼吸点が2つ以上に広がり、敵石も取らない純粋な逃げなら星石を強制キャンセル！
     if (testGroup.liberties.size >= 2 && testRes.captured.length === 0) {
       return { useStar: false, starColor: color };
     }
   }
   
-  // 通常手では1眼しか作れず全滅する、または敵の大石を星石の超圧力で一網打尽にできる時だけの緊急トリガー
   const atariPoints = getAtariPoints(color);
   const oppAtari = getAtariPoints(opp);
   let starScore = 0;
@@ -1640,12 +1628,12 @@ function cpuTurn() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  UI表示更新処理
+//  UI Updates
 // ═══════════════════════════════════════════════════════════
 const COLS = 'ABCDEFGHJ';
 function coordStr(x, y) { return COLS[x] + (SIZE - y); }
 function setStatus(msg) { document.getElementById('status-bar').innerHTML = msg; }
-function currentPlayerLabel() { return current === BLACK ? '<span>黒</span>の手番' : '<span>白</span>の手番'; }
+function currentPlayerLabel() { return current === BLACK ? "<span>Black</span>'s Turn" : "<span>White</span>'s Turn"; }
 
 function updateStarPanel() {
   const panel = document.getElementById('star-panel');
@@ -1662,15 +1650,15 @@ function updateStarPanel() {
   badge.className = 'star-badge' + (starUsed[humanColor] ? ' used' : '') + (starPending ? ' active' : '');
 
   if (starUsed[humanColor]) {
-    label.textContent = `あなたの星石（使用済: ${starMoveNo[humanColor]}手目）`;
+    label.textContent = `Your Star Stone (Used: Move ${starMoveNo[humanColor]})`;
   } else if (starPending) {
-    label.textContent = '★ 星石待機中 — 盤面をクリックして配置';
+    label.textContent = '★ Star Stone Pending — Click board to place';
   } else if (!isMyTurn) {
-    label.textContent = 'あなたの星石（未使用）';
+    label.textContent = 'Your Star Stone (Unused)';
   } else if (!canUse) {
-    label.textContent = 'あなたの星石（失効条件により使用不可）';
+    label.textContent = 'Your Star Stone (Locked by rules)';
   } else {
-    label.textContent = 'あなたの星石（未使用）← タップで使用';
+    label.textContent = 'Your Star Stone (Unused) ← Tap to use';
   }
 }
 
@@ -1681,33 +1669,33 @@ function updateModeUI() {
 function updateStats() {
   document.getElementById('st-moves').textContent = totalMoves;
   document.getElementById('st-pass').textContent  = passCnt;
-  document.getElementById('st-star-b').textContent = starMoveNo[BLACK] !== null ? `${starMoveNo[BLACK]}手目` : '—';
-  document.getElementById('st-star-w').textContent = starMoveNo[WHITE] !== null ? `${starMoveNo[WHITE]}手目` : '—';
+  document.getElementById('st-star-b').textContent = starMoveNo[BLACK] !== null ? `Move ${starMoveNo[BLACK]}` : '—';
+  document.getElementById('st-star-w').textContent = starMoveNo[WHITE] !== null ? `Move ${starMoveNo[WHITE]}` : '—';
 }
 
 // ═══════════════════════════════════════════════════════════
-//  SGF生成・出力（v1.2.1 iOS Safariダウンロード対策パッチ適用済）
+//  SGF Generation & Anti-Safari Safe Exporting
 // ═══════════════════════════════════════════════════════════
 function toSGFCoord(x, y) { return String.fromCharCode(97 + x) + String.fromCharCode(97 + y); }
 
 function buildSGF() {
-  const expireLabel = ['失効なし', '空点≤25で失効', '初回パス後失効'][expireMode] || '';
-  const modeLabel   = gameMode === 'human-expert' ? '人間vsExpert' : gameMode === 'human-advanced' ? '人間vsAdvanced' : 'CPU対局';
-  const rootComment = `星囲碁 / Hoshigo v1.2.1. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.2.1]C[${rootComment}]`;
+  const expireLabel = ['No Expiry', 'Locked at Empty<=25', 'Locked after Pass'][expireMode] || '';
+  const modeLabel   = gameMode === 'human-expert' ? 'Human vs Expert' : gameMode === 'human-advanced' ? 'Human vs Advanced' : gameMode === 'human-classic' ? 'Human vs Classic' : 'CPU Match';
+  const rootComment = `星囲碁 / Hoshi Go v1.3. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.3]C[${rootComment}]`;
 
   for (const e of moveLog) {
-    const playerName = e.player === BLACK ? '黒' : '白';
+    const playerName = e.player === BLACK ? 'Black' : 'White';
     if (e.type === 'pass') {
-      sgf += `;${e.player === BLACK ? 'B' : 'W'}[]C[${playerName} パス]`;
+      sgf += `;${e.player === BLACK ? 'B' : 'W'}[]C[${playerName} Pass]`;
     } else if (e.type === 'resign') {
-      sgf += `;${e.player === BLACK ? 'B' : 'W'}[]C[${playerName} 投了]`;
+      sgf += `;${e.player === BLACK ? 'B' : 'W'}[]C[${playerName} Resigned]`;
     } else {
       const stoneColor = e.isStar ? e.starColor : e.player;
       const token      = stoneColor === BLACK ? 'B' : 'W';
       const coord      = toSGFCoord(e.x, e.y);
       if (e.isStar) {
-        sgf += `;${token}[${coord}]C[星石使用: 手番=${playerName} / 色=${e.starColor === BLACK ? '黒' : '白'}]`;
+        sgf += `;${token}[${coord}]C[Star Stone Used: Player=${playerName} / Color=${e.starColor === BLACK ? 'Black' : 'White'}]`;
       } else {
         sgf += `;${token}[${coord}]`;
       }
@@ -1728,34 +1716,31 @@ function showSGFPreview(sgf) {
 }
 
 document.getElementById('btn-sgf-gen').addEventListener('click', () => {
-  if (moveLog.length === 0) { setSGFMsg('棋譜がありません。', true); return; }
-  const sgf = buildSGF(); showSGFPreview(sgf); setSGFMsg('SGFを生成しました。', false);
+  if (moveLog.length === 0) { setSGFMsg('No moves recorded.', true); return; }
+  const sgf = buildSGF(); showSGFPreview(sgf); setSGFMsg('SGF generated.', false);
 });
 
 document.getElementById('btn-sgf-copy').addEventListener('click', () => {
-  if (moveLog.length === 0) { setSGFMsg('棋譜がありません。', true); return; }
+  if (moveLog.length === 0) { setSGFMsg('No moves recorded.', true); return; }
   const sgf = buildSGF(); showSGFPreview(sgf);
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(sgf).then(() => setSGFMsg('✅ コピーしました。', false));
+    navigator.clipboard.writeText(sgf).then(() => setSGFMsg('✅ SGF copied to clipboard.', false));
   }
 });
 
 document.getElementById('btn-sgf-dl').addEventListener('click', () => {
-  if (moveLog.length === 0) { setSGFMsg('棋譜がありません。', true); return; }
+  if (moveLog.length === 0) { setSGFMsg('No moves recorded.', true); return; }
   const sgf = buildSGF();
   showSGFPreview(sgf);
 
-  // 1. 保険としてクリップボードへ自動コピー（最悪ファイル作成が弾かれても安全）
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(sgf).catch(err => console.log("Clipboard fallback ready"));
   }
 
   try {
-    // 2. MIMEタイプをバイナリ（octet-stream）に強制指定してSafariのテキスト表示を回避
     const blob = new Blob([sgf], { type: 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
     
-    // 3. 仮想のaタグを作り、同期イベントのコールバック内で直接クリックを実行
     const a = document.createElement('a');
     a.href = url;
     a.download = `Hoshigo_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.sgf`;
@@ -1763,32 +1748,30 @@ document.getElementById('btn-sgf-dl').addEventListener('click', () => {
     document.body.appendChild(a);
     a.click();
     
-    // 後片付け
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    setSGFMsg('✅ ダウンロードを開始しました（クリップボードにもコピー済）。', false);
+    setSGFMsg('✅ Download started (also copied to clipboard).', false);
 
   } catch (error) {
-    // 4. ガチガチのプライベートブラウズなどでファイルダウンロードが全滅した場合のフォールバック
-    setSGFMsg('🔒 Safariの制限により、代わりにクリップボードにコピーしました。そのまま貼付可能です。', false);
+    setSGFMsg('🔒 Blocked by Safari restrictions. SGF copied to clipboard instead.', false);
   }
 });
 
 // ═══════════════════════════════════════════════════════════
-//  着手ハンドラ
+//  Move Handlers & Loop Engine
 // ═══════════════════════════════════════════════════════════
 function renderLog() {
   const el = document.getElementById('move-log');
   el.innerHTML = moveLog.map(e => {
-    const pName = e.player === BLACK ? '黒' : '白';
+    const pName = e.player === BLACK ? 'Black' : 'White';
     let cls = '', text = '';
-    if (e.type === 'pass') { cls = 'pass-move'; text = `${e.moveNo}. ${pName} — パス`; } 
-    else if (e.type === 'resign') { text = `${e.moveNo}. ${pName} — 投了`; } 
+    if (e.type === 'pass') { cls = 'pass-move'; text = `${e.moveNo}. ${pName} — Pass`; } 
+    else if (e.type === 'resign') { text = `${e.moveNo}. ${pName} — Resigned`; } 
     else {
       const coord = coordStr(e.x, e.y);
-      if (e.isStar) { cls = 'star-move'; text = `${e.moveNo}. ${pName} — ${coord} [星石:${e.starColor===BLACK?'黒':'白'}★]`; } 
+      if (e.isStar) { cls = 'star-move'; text = `${e.moveNo}. ${pName} — ${coord} [Star:${e.starColor===BLACK?'Black':'White'}★]`; } 
       else { text = `${e.moveNo}. ${pName} — ${coord}`; }
-      if (e.captured && e.captured.length > 0) text += ` (取:${e.captured.length})`;
+      if (e.captured && e.captured.length > 0) text += ` (Cap:${e.captured.length})`;
     }
     return `<div class="${cls}">${text}</div>`;
   }).join('');
@@ -1802,7 +1785,7 @@ function doMove(x, y, isStar, starColor) {
   const result = placeStone(board, x, y, stoneColor, isStar, koPoint);
   if (!result.ok) {
     board.length = 0; savedBoard.forEach(r => board.push(r));
-    setStatus(`⛔ 不正手。${currentPlayerLabel()}`);
+    setStatus(`⛔ Illegal move. ${currentPlayerLabel()}`);
     return false;
   }
 
@@ -1827,7 +1810,7 @@ function doPass() {
   firstPassDone = true; starPending = false; pendingStarColor = null; koPoint = null;
   moveLog.push({ moveNo: totalMoves, player: current, type: 'pass' });
   renderLog(); updateStats();
-  if (consecutivePasses >= 2) { endGame('両者パス'); return; }
+  if (consecutivePasses >= 2) { endGame('Both players passed'); return; }
   current = 1 - current;
   drawBoard(); updateStarPanel(); setStatus(currentPlayerLabel());
 }
@@ -1835,14 +1818,14 @@ function doPass() {
 function doResign() {
   if (gameOver) return;
   moveLog.push({ moveNo: totalMoves + 1, player: current, type: 'resign' });
-  endGame(`${current === BLACK ? '白' : '黒'} 勝ち（投了）`);
+  endGame(`${current === BLACK ? 'White' : 'Black'} wins by resignation`);
 }
 
 function endGame(reason) {
   gameOver = true;
   if (cpuTimer) { clearInterval(cpuTimer); cpuTimer = null; }
   if (cpuTimeout) { clearTimeout(cpuTimeout); cpuTimeout = null; }
-  setStatus(`🏁 ゲーム終了 — ${reason}`);
+  setStatus(`🏁 Game Over — ${reason}`);
   updateStarPanel();
 }
 
@@ -1907,8 +1890,8 @@ document.getElementById('star-human').addEventListener('click', () => {
   showPicker();
 });
 
-document.getElementById('star-pick-black').addEventListener('click', () => { hidePicker(); starPending = true; pendingStarColor = BLACK; updateStarPanel(); setStatus('★ 星石（黒）: 盤面へ配置してください。'); });
-document.getElementById('star-pick-white').addEventListener('click', () => { hidePicker(); starPending = true; pendingStarColor = WHITE; updateStarPanel(); setStatus('★ 星石（白）: 盤面へ配置してください。'); });
+document.getElementById('star-pick-black').addEventListener('click', () => { hidePicker(); starPending = true; pendingStarColor = BLACK; updateStarPanel(); setStatus('★ Star Stone (Black): Click on the board to place.'); });
+document.getElementById('star-pick-white').addEventListener('click', () => { hidePicker(); starPending = true; pendingStarColor = WHITE; updateStarPanel(); setStatus('★ Star Stone (White): Click on the board to place.'); });
 document.getElementById('star-pick-cancel').addEventListener('click', () => { hidePicker(); starPending = false; pendingStarColor = null; updateStarPanel(); });
 document.getElementById('overlay').addEventListener('click', () => { hidePicker(); starPending = false; pendingStarColor = null; updateStarPanel(); });
 
