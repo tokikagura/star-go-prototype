@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  星囲碁 / Hoshigo Prototype v1.0f
+  星囲碁 / Hoshigo Prototype v1.0h
   Concept & Design: 刻神楽 (_tokikagura)
   Implementation support: AI-assisted prototyping
   License: Prototype / private experimental build
@@ -9,7 +9,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 プロトタイプ v1.0f</title>
+  <title>星囲碁 プロトタイプ v1.0h</title>
   <style>
 /* ════════════════════════════════
    リセット・基礎
@@ -312,7 +312,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 <body>
 <div id="app">
 
-  <div id="title-bar">★ 星囲碁 プロトタイプ v1.0f</div>
+  <div id="title-bar">★ 星囲碁 プロトタイプ v1.0h</div>
 
   <!-- 手番・状態 -->
   <div id="status-bar">準備中…</div>
@@ -353,16 +353,16 @@ label { font-size: 0.82rem; cursor: pointer; }
         <div class="setting-row">
           <label>モード:</label>
           <select id="sel-mode">
-            <option value="human-advanced" selected>人間 vs CPU [Advanced]</option>
+            <option value="human-expert" selected>人間 vs CPU [Expert]</option>
+            <option value="human-advanced">人間 vs CPU [Advanced]</option>
             <option value="human-classic">人間 vs CPU [Classic]</option>
-            <option value="cpu-classic-advanced">CPU [Classic] vs CPU [Advanced]</option>
-            <option value="cpu-advanced-classic">CPU [Advanced] vs CPU [Classic]</option>
+            <option value="cpu-advanced-expert">CPU [Advanced] vs CPU [Expert]</option>
           </select>
         </div>
         <!-- CPU vs CPU はモード名でAIの先後を指定 -->
         <div class="setting-row" id="row-cpu-level" style="display:none;">
           <label>CPU設定:</label>
-          <span style="font-size:0.82rem;color:#aaa;">Classic / Advanced</span>
+          <span style="font-size:0.82rem;color:#aaa;">Classic / Advanced / Expert</span>
         </div>
         <div class="setting-row">
           <label>人間の色:</label>
@@ -494,6 +494,9 @@ const SCORE_STAR_NEAR_ATARI= 30;   // 星石: 自分のアタリ連の隣
 const SIMPLE_AI_CANDIDATES = 10;   // 先読み対象にする候補手数（モバイル軽量化）
 const SIMPLE_AI_REPLY_LIMIT = 6;    // 相手応手の候補数（モバイル軽量化）
 const SIMPLE_AI_RESCUE_LIMIT = 4;   // 3手目の候補数（モバイル軽量化）
+const EXPERT_AI_CANDIDATES = 18;    // Expert: 候補手数（重いが強い）
+const EXPERT_AI_REPLY_LIMIT = 10;   // Expert: 相手応手候補
+const EXPERT_AI_RESCUE_LIMIT = 6;   // Expert: 3手目候補
 
 // ═══════════════════════════════════════════════════════════
 //  Canvas セットアップ
@@ -525,13 +528,14 @@ let consecutivePasses = 0;
 let firstPassDone     = false;
 let moveLog           = [];
 
-// モード: 'human-advanced' | 'human-classic' | 'cpu-classic-advanced' | 'cpu-advanced-classic'
-let gameMode   = 'human-advanced';
-let cpuLevel   = 'advanced';
+// モード: 'human-expert' | 'human-advanced' | 'human-classic' | CPU同士比較
+let gameMode   = 'human-expert';
+let cpuLevel   = 'expert';
 let humanColor = BLACK;
 let expireMode = 0;
 
 let cpuTimer = null;
+let cpuTimeout = null;
 
 // ═══════════════════════════════════════════════════════════
 //  盤面描画
@@ -1187,6 +1191,316 @@ function chooseStarUse(pick, color, moveNo) {
   return { useStar, starColor };
 }
 
+
+// ═══════════════════════════════════════════════════════════
+//  Expert CPU v1.0h
+//  ・9路星囲碁専用の布石感覚
+//  ・空点領域の実地推定
+//  ・弱い連の救出 / 相手弱連への圧力
+//  ・Advancedより重いが、スマホでも止まりにくい浅深度探索
+// ═══════════════════════════════════════════════════════════
+
+function expertPhase(moveNo) {
+  if (moveNo < 14) return 'opening';
+  if (moveNo < 44) return 'middle';
+  return 'endgame';
+}
+
+function expertAnchorValue(x, y) {
+  // 9路の実戦感覚: 三々・星付近・辺の根拠を重視し、中央一点主義を避ける。
+  let v = 0;
+  if ((x === 2 || x === 6) && (y === 2 || y === 6)) v += 42;
+  if ((x === 2 || x === 6) && (y === 3 || y === 5)) v += 20;
+  if ((y === 2 || y === 6) && (x === 3 || x === 5)) v += 20;
+  if ((x === 1 || x === 7) && (y === 2 || y === 6)) v += 10;
+  if ((y === 1 || y === 7) && (x === 2 || x === 6)) v += 10;
+  if (x >= 3 && x <= 5 && y >= 3 && y <= 5) v -= 14;
+  if (x === 4 && y === 4) v -= 20;
+  if (isEdge(x, y)) v -= 24;
+  return v;
+}
+
+function emptyRegionScore(brd, color) {
+  const opp = 1 - color;
+  const seen = new Set();
+  let score = 0;
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if (brd[y][x] !== EMPTY) continue;
+      const start = `${x},${y}`;
+      if (seen.has(start)) continue;
+      const stack = [[x, y]];
+      const region = [];
+      const border = new Set();
+      seen.add(start);
+      while (stack.length) {
+        const [cx, cy] = stack.pop();
+        region.push([cx, cy]);
+        for (const [nx, ny] of neighbors(cx, cy)) {
+          const v = brd[ny][nx];
+          if (v === EMPTY) {
+            const k = `${nx},${ny}`;
+            if (!seen.has(k)) { seen.add(k); stack.push([nx, ny]); }
+          } else {
+            border.add(v);
+          }
+        }
+      }
+      const n = region.length;
+      if (border.size === 1 && border.has(color)) score += n * 24;
+      else if (border.size === 1 && border.has(opp)) score -= n * 24;
+      else {
+        let ownInf = 0, oppInf = 0, edgeTouch = 0;
+        for (const [rx, ry] of region) {
+          const own = countAround(brd, rx, ry, color, 2).own;
+          const enemy = countAround(brd, rx, ry, opp, 2).own;
+          ownInf += own;
+          oppInf += enemy;
+          if (isEdge(rx, ry)) edgeTouch++;
+        }
+        score += (ownInf - oppInf) * 1.8;
+        if (edgeTouch > 0) score += Math.sign(ownInf - oppInf) * Math.min(10, edgeTouch * 2);
+      }
+    }
+  }
+  return score;
+}
+
+function expertGroupScore(brd, color) {
+  const opp = 1 - color;
+  let score = 0;
+  const visited = new Set();
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if (brd[y][x] !== color) continue;
+      const key = `${x},${y}`;
+      if (visited.has(key)) continue;
+      const g = getGroup(brd, x, y);
+      g.stones.forEach(([sx, sy]) => visited.add(`${sx},${sy}`));
+      const libs = g.liberties.size;
+      const size = g.stones.length;
+      score += size * 10 + Math.min(libs, 7) * 13;
+      if (libs === 1) score -= 160 + size * 28;
+      else if (libs === 2) score -= 52 + size * 10;
+      else if (libs >= 4) score += 22 + Math.min(size, 5) * 5;
+
+      // 眼っぽい呼吸点を少し見る。完全な死活ではないが、終盤の生存判断に効く。
+      let eyeish = 0;
+      g.liberties.forEach(lib => {
+        const [lx, ly] = lib.split(',').map(Number);
+        const around = neighbors(lx, ly);
+        const ownN = around.filter(([nx, ny]) => brd[ny][nx] === color).length;
+        const oppN = around.filter(([nx, ny]) => brd[ny][nx] === opp).length;
+        if (ownN >= 2 && oppN === 0) eyeish++;
+      });
+      if (eyeish >= 2) score += 55;
+      else if (eyeish === 1) score += 18;
+    }
+  }
+  return score;
+}
+
+function expertTerritoryMoveShape(brd, x, y, color, moveNo) {
+  const opp = 1 - color;
+  const phase = expertPhase(moveNo);
+  const r1 = countAround(brd, x, y, color, 1);
+  const r2 = countAround(brd, x, y, color, 2);
+  const enemy1 = countAround(brd, x, y, opp, 1);
+  let score = 0;
+
+  score += expertAnchorValue(x, y);
+
+  // 自石密集の団子を強く嫌う。戦術手なら別途加点されるので、形の悪さだけ見る。
+  if (r1.own >= 3 && r1.opp === 0) score -= 72;
+  if (r2.own >= 6 && r2.opp <= 1) score -= 66;
+  if (phase === 'opening') {
+    const q = quadrantOf(x, y);
+    const ownQ = quadrantCounts(brd, color);
+    const oppQ = quadrantCounts(brd, opp);
+    if (q >= 0) {
+      if (ownQ[q] === 0) score += 58;
+      else if (ownQ[q] === 1) score += 18;
+      else score -= 36 * (ownQ[q] - 1);
+      if (oppQ[q] >= ownQ[q] + 1) score += 26;
+    } else {
+      score -= 34;
+    }
+    if (isEdge(x, y)) score -= 58;
+    if (isSecondLine(x, y) && r1.opp === 0) score -= 16;
+  }
+
+  // 囲う輪郭は評価、地を自分で埋めるだけの手は減点。
+  if (r1.own >= 2 && r1.opp === 0 && r1.empty >= 3) score += 30;
+  if (r2.own >= 3 && r2.opp <= 1 && r1.empty >= 2) score += 18;
+  if (phase === 'endgame' && r1.own >= 3 && r1.opp === 0 && r1.empty <= 2) score -= 50;
+
+  // 相手の根拠に近い大場や消しは評価。
+  if (enemy1.opp >= 1 && r1.own >= 1) score += 22;
+  if (r2.opp >= 4 && r2.own <= 1) score += 30;
+  return score;
+}
+
+function expertEvaluateBoard(brd, color) {
+  const opp = 1 - color;
+  let score = 0;
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const v = brd[y][x];
+      if (v === color) score += 18 + expertAnchorValue(x, y) * 0.25;
+      else if (v === opp) score -= 18 + expertAnchorValue(x, y) * 0.25;
+      else {
+        const own = countAround(brd, x, y, color, 2).own;
+        const enemy = countAround(brd, x, y, opp, 2).own;
+        score += (own - enemy) * 2.2;
+      }
+    }
+  }
+  score += emptyRegionScore(brd, color) * 1.20;
+  score += expertGroupScore(brd, color) * 1.05;
+  score -= expertGroupScore(brd, opp) * 1.00;
+  score += starThreatPenalty(brd, color, canUseStarStone(opp)) * 0.55;
+  return score;
+}
+
+function expertMoveHeuristicOn(brd, x, y, color, koP, moveNo) {
+  const tmp = cloneBoard(brd);
+  const result = placeStonePure(tmp, x, y, color, koP);
+  if (!result.ok) return -Infinity;
+  const opp = 1 - color;
+  const selfAfter = getGroup(tmp, x, y);
+  const atariPoints = getAtariPointsOn(brd, color);
+  const oppAtari = getAtariPointsOn(brd, opp);
+  let score = 0;
+
+  if (result.captured.length > 0) score += 220 + result.captured.length * 45;
+  if (atariPoints.has(`${x},${y}`)) score += 180;
+  if (oppAtari.has(`${x},${y}`)) score += 88;
+
+  const libs = selfAfter.liberties.size;
+  score += Math.min(libs, 7) * 18;
+  if (libs === 1) score -= 260;
+  else if (libs === 2) score -= 70;
+  else if (libs >= 4) score += 28;
+
+  score += expertTerritoryMoveShape(brd, x, y, color, moveNo);
+  score += expertEvaluateBoard(tmp, color) * 0.23;
+
+  // 相手の次の一撃で取られやすい形は、読みに入る前から嫌う。
+  const oppMoves = getLegalMovesPure(tmp, opp, result.newKo);
+  const sharpReplies = topExpertMoves(tmp, oppMoves, opp, result.newKo, moveNo + 1, Math.min(5, EXPERT_AI_REPLY_LIMIT));
+  if (sharpReplies.length) {
+    let worst = 0;
+    for (const r of sharpReplies) {
+      const after = cloneBoard(tmp);
+      const rr = placeStonePure(after, r.x, r.y, opp, result.newKo);
+      if (!rr.ok) continue;
+      const loss = expertEvaluateBoard(tmp, color) - expertEvaluateBoard(after, color);
+      if (loss > worst) worst = loss;
+    }
+    score -= worst * 0.18;
+  }
+  return score;
+}
+
+function topExpertMoves(brd, moves, color, koP, moveNo, limit) {
+  return moves
+    .map(([x, y]) => ({ x, y, score: expertMoveHeuristicOn(brd, x, y, color, koP, moveNo) }))
+    .filter(m => Number.isFinite(m.score))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
+function expertLookaheadScore(x, y, color) {
+  const opp = 1 - color;
+  const moveNo = totalMoves + 1;
+  const first = cloneBoard(board);
+  const firstResult = placeStonePure(first, x, y, color, koPoint);
+  if (!firstResult.ok) return -Infinity;
+  const firstScore = expertEvaluateBoard(first, color) + expertMoveHeuristicOn(board, x, y, color, koPoint, moveNo);
+  const oppMoves = getLegalMovesPure(first, opp, firstResult.newKo);
+  if (oppMoves.length === 0) return firstScore + 80;
+
+  const oppCandidates = topExpertMoves(first, oppMoves, opp, firstResult.newKo, moveNo + 1, EXPERT_AI_REPLY_LIMIT);
+  if (!oppCandidates.length) return firstScore;
+
+  let worstAfterReply = Infinity;
+  for (const reply of oppCandidates) {
+    const second = cloneBoard(first);
+    const secondResult = placeStonePure(second, reply.x, reply.y, opp, firstResult.newKo);
+    if (!secondResult.ok) continue;
+    let afterReplyScore = expertEvaluateBoard(second, color);
+    const myReplies = getLegalMovesPure(second, color, secondResult.newKo);
+    if (myReplies.length) {
+      const myCandidates = topExpertMoves(second, myReplies, color, secondResult.newKo, moveNo + 2, EXPERT_AI_RESCUE_LIMIT);
+      let bestRescue = -Infinity;
+      for (const rescue of myCandidates) {
+        const third = cloneBoard(second);
+        const thirdResult = placeStonePure(third, rescue.x, rescue.y, color, secondResult.newKo);
+        if (!thirdResult.ok) continue;
+        const v = expertEvaluateBoard(third, color) + rescue.score * 0.28;
+        if (v > bestRescue) bestRescue = v;
+      }
+      if (bestRescue > -Infinity) afterReplyScore = afterReplyScore * 0.42 + bestRescue * 0.58;
+    }
+    if (afterReplyScore < worstAfterReply) worstAfterReply = afterReplyScore;
+  }
+  if (worstAfterReply === Infinity) return firstScore;
+  return firstScore * 0.38 + worstAfterReply * 0.62;
+}
+
+function expertOpeningBook(legalMoves, color, moveNo) {
+  if (moveNo > 8) return null;
+  const anchors = [
+    [2, 2], [6, 6], [6, 2], [2, 6],
+    [4, 2], [2, 4], [6, 4], [4, 6]
+  ];
+  const legalSet = new Set(legalMoves.map(([x, y]) => `${x},${y}`));
+  let best = null;
+  for (const [x, y] of anchors) {
+    if (!legalSet.has(`${x},${y}`)) continue;
+    const score = expertMoveHeuristicOn(board, x, y, color, koPoint, moveNo) + expertAnchorValue(x, y) * 1.4;
+    if (!best || score > best.score) best = { x, y, score };
+  }
+  return best;
+}
+
+function chooseExpertStarUse(pick, color, moveNo) {
+  const opp = 1 - color;
+  let useStar = false;
+  let starColor = color;
+  if (!canUseStarStone(color) || totalMoves < 12) return { useStar, starColor };
+  const atariPoints = getAtariPoints(color);
+  const oppAtari = getAtariPoints(opp);
+  let starScore = 0;
+  if (atariPoints.has(`${pick.x},${pick.y}`)) starScore += 60;
+  if (oppAtari.has(`${pick.x},${pick.y}`)) starScore += 52;
+  const r1 = countAround(board, pick.x, pick.y, color, 1);
+  const r2 = countAround(board, pick.x, pick.y, color, 2);
+  if (r1.opp >= 2 && r1.own >= 1) starScore += 42; // 切断・競り合い
+  if (r2.opp >= 4 && r2.own <= 2) starScore += 30; // 消し
+  if (pick.score >= 260) starScore += 20;
+  if (starScore >= 78) useStar = true;
+  return { useStar, starColor };
+}
+
+function expertAI(legalMoves, color) {
+  if (legalMoves.length === 0) return null;
+  const moveNo = totalMoves + 1;
+  const book = expertOpeningBook(legalMoves, color, moveNo);
+  const candidates = topExpertMoves(board, legalMoves, color, koPoint, moveNo, EXPERT_AI_CANDIDATES);
+  const base = candidates.length ? candidates : legalMoves.map(([x, y]) => ({ x, y, score: 0 }));
+  const scored = base.map(m => {
+    const reading = expertLookaheadScore(m.x, m.y, color);
+    const safeReading = Number.isFinite(reading) ? reading : -999999;
+    let score = m.score * 0.42 + safeReading * 0.58;
+    if (book && m.x === book.x && m.y === book.y) score += 55;
+    return { x: m.x, y: m.y, score, baseScore: m.score, reading: safeReading };
+  }).filter(m => Number.isFinite(m.score)).sort((a, b) => b.score - a.score);
+  const pick = scored[0] || book || { x: legalMoves[0][0], y: legalMoves[0][1], score: 0 };
+  const star = chooseExpertStarUse(pick, color, moveNo);
+  return { x: pick.x, y: pick.y, useStar: star.useStar, starColor: star.starColor };
+}
+
 function classicAI(legalMoves, color) {
   if (legalMoves.length === 0) return null;
   const moveNo = totalMoves + 1;
@@ -1221,17 +1535,24 @@ function simpleAI(legalMoves, color) { return advancedAI(legalMoves, color); }
 function aiForCurrentColor() {
   if (gameMode === 'human-classic') return current === humanColor ? 'human' : 'classic';
   if (gameMode === 'human-advanced') return current === humanColor ? 'human' : 'advanced';
+  if (gameMode === 'human-expert') return current === humanColor ? 'human' : 'expert';
   if (gameMode === 'cpu-classic-advanced') return current === BLACK ? 'classic' : 'advanced';
   if (gameMode === 'cpu-advanced-classic') return current === BLACK ? 'advanced' : 'classic';
-  return current === humanColor ? 'human' : 'advanced';
+  if (gameMode === 'cpu-advanced-expert') return current === BLACK ? 'advanced' : 'expert';
+  if (gameMode === 'cpu-expert-advanced') return current === BLACK ? 'expert' : 'advanced';
+  if (gameMode === 'cpu-classic-expert') return current === BLACK ? 'classic' : 'expert';
+  if (gameMode === 'cpu-expert-classic') return current === BLACK ? 'expert' : 'classic';
+  return current === humanColor ? 'human' : 'expert';
 }
 
 function cpuTurn() {
+  cpuTimeout = null;
   if (gameOver) return;
+  const ai = aiForCurrentColor();
+  if (ai === 'human') return;
   const legal = getLegalMoves(board, current, koPoint);
   if (legal.length === 0) { doPass(); return; }
-  const ai = aiForCurrentColor();
-  const decision = ai === 'classic' ? classicAI(legal, current) : advancedAI(legal, current);
+  const decision = ai === 'classic' ? classicAI(legal, current) : ai === 'expert' ? expertAI(legal, current) : advancedAI(legal, current);
   if (!decision) { doPass(); return; }
   doMove(decision.x, decision.y, decision.useStar, decision.starColor);
 }
@@ -1258,7 +1579,7 @@ function updateStarPanel() {
   const label = document.getElementById('star-human-label');
 
   // 星石パネルは人間が参加するモードのみ表示
-  const humanPlaying = gameMode === 'human-advanced' || gameMode === 'human-classic';
+  const humanPlaying = gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic';
   if (!humanPlaying) {
     panel.style.display = 'none';
     return;
@@ -1314,8 +1635,13 @@ function toSGFCoord(x, y) {
 function buildSGF() {
   // ── ルートノード ──
   const expireLabel = ['失効なし', '空点≤25で失効', '初回パス後失効'][expireMode] || '';
-  const modeLabel   = gameMode === 'human-advanced' ? '人間vsAdvanced'
+  const modeLabel   = gameMode === 'human-expert' ? '人間vsExpert'
+                    : gameMode === 'human-advanced' ? '人間vsAdvanced'
                     : gameMode === 'human-classic' ? '人間vsClassic'
+                    : gameMode === 'cpu-advanced-expert' ? 'CPU Advanced vs Expert'
+                    : gameMode === 'cpu-expert-advanced' ? 'CPU Expert vs Advanced'
+                    : gameMode === 'cpu-classic-expert' ? 'CPU Classic vs Expert'
+                    : gameMode === 'cpu-expert-classic' ? 'CPU Expert vs Classic'
                     : gameMode === 'cpu-classic-advanced' ? 'CPU Classic vs Advanced'
                     : gameMode === 'cpu-advanced-classic' ? 'CPU Advanced vs Classic'
                     : 'Unknown';
@@ -1326,7 +1652,7 @@ function buildSGF() {
     'SGF export prioritizes board reproduction. ' +
     `Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
 
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.0f]C[${rootComment}]`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.0h]C[${rootComment}]`;
 
   // ── 手順ノード ──
   for (const e of moveLog) {
@@ -1635,6 +1961,7 @@ function doResign() {
 function endGame(reason) {
   gameOver = true;
   if (cpuTimer) { clearInterval(cpuTimer); cpuTimer = null; }
+  if (cpuTimeout) { clearTimeout(cpuTimeout); cpuTimeout = null; }
   setStatus(`🏁 ゲーム終了 — ${reason}`);
   updateStarPanel();
 }
@@ -1644,9 +1971,10 @@ function endGame(reason) {
 // ═══════════════════════════════════════════════════════════
 function startGame() {
   if (cpuTimer) { clearInterval(cpuTimer); cpuTimer = null; }
+  if (cpuTimeout) { clearTimeout(cpuTimeout); cpuTimeout = null; }
 
   gameMode   = document.getElementById('sel-mode').value;
-  cpuLevel   = 'advanced';
+  cpuLevel   = 'expert';
   humanColor = parseInt(document.getElementById('sel-color').value);
   expireMode = parseInt(document.querySelector('input[name=expire]:checked').value);
 
@@ -1671,14 +1999,14 @@ function startGame() {
   updateStats();
   setStatus(currentPlayerLabel());
 
-  if (gameMode === 'cpu-classic-advanced' || gameMode === 'cpu-advanced-classic') {
+  if (gameMode.startsWith('cpu-')) {
     cpuTimer = setInterval(() => {
       if (gameOver) { clearInterval(cpuTimer); cpuTimer = null; return; }
       cpuTurn();
     }, 500);
-  } else if ((gameMode === 'human-advanced' || gameMode === 'human-classic') && humanColor === WHITE) {
+  } else if ((gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic') && humanColor === WHITE) {
     // 人間が白 → CPU(黒)から始める
-    setTimeout(cpuTurn, 300);
+    cpuTimeout = setTimeout(cpuTurn, 300);
   }
 }
 
@@ -1698,7 +2026,7 @@ function screenToBoard(clientX, clientY) {
 }
 
 function handleBoardTap(clientX, clientY) {
-  const humanPlaying = gameMode === 'human-advanced' || gameMode === 'human-classic';
+  const humanPlaying = gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic';
   if (!humanPlaying) return;
   if (gameOver) return;
   if (current !== humanColor) return;
@@ -1708,17 +2036,17 @@ function handleBoardTap(clientX, clientY) {
 
   if (starPending) {
     const ok = doMove(x, y, true, pendingStarColor);
-    if (ok) setTimeout(cpuTurn, 400);
+    if (ok) cpuTimeout = setTimeout(cpuTurn, 400);
   } else {
     const ok = doMove(x, y, false, null);
-    if (ok) setTimeout(cpuTurn, 400);
+    if (ok) cpuTimeout = setTimeout(cpuTurn, 400);
   }
 }
 
 canvas.addEventListener('click', e => { handleBoardTap(e.clientX, e.clientY); });
 
 canvas.addEventListener('mousemove', e => {
-  const humanPlaying = gameMode === 'human-advanced' || gameMode === 'human-classic';
+  const humanPlaying = gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic';
   if (!humanPlaying || gameOver || current !== humanColor) return;
   const { x, y } = screenToBoard(e.clientX, e.clientY);
   drawBoard();
@@ -1746,7 +2074,7 @@ function hidePicker() {
 }
 
 document.getElementById('star-human').addEventListener('click', () => {
-  const humanPlaying = gameMode === 'human-advanced' || gameMode === 'human-classic';
+  const humanPlaying = gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic';
   if (!humanPlaying) return;
   if (gameOver || current !== humanColor) return;
   if (!canUseStarStone(humanColor)) {
@@ -1786,14 +2114,14 @@ document.getElementById('overlay').addEventListener('click', () => {
 //  主要ボタン
 // ═══════════════════════════════════════════════════════════
 document.getElementById('btn-pass').addEventListener('click', () => {
-  const humanPlaying = gameMode === 'human-advanced' || gameMode === 'human-classic';
+  const humanPlaying = gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic';
   if (!humanPlaying || gameOver || current !== humanColor) return;
   doPass();
-  if (!gameOver) setTimeout(cpuTurn, 400);
+  if (!gameOver) cpuTimeout = setTimeout(cpuTurn, 400);
 });
 
 document.getElementById('btn-resign').addEventListener('click', () => {
-  const humanPlaying = gameMode === 'human-advanced' || gameMode === 'human-classic';
+  const humanPlaying = gameMode === 'human-expert' || gameMode === 'human-advanced' || gameMode === 'human-classic';
   if (!humanPlaying || gameOver || current !== humanColor) return;
   doResign();
 });
