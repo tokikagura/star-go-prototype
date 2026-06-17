@@ -887,16 +887,18 @@ function territoryPotential(brd, x, y, color, moveNo) {
   const r2 = countAround(brd, x, y, color, 2);
   let score = 0;
 
-  score += r1.own * 12 - r1.opp * 10;
+  // v1.0b: 自石の隣に詰めるだけの癖を抑え、少し離れた囲いの骨格を高く見る。
+  score += r1.own * 6  - r1.opp * 9;
   score += r2.own * 4  - r2.opp * 3;
 
-  if (r1.own >= 2 && r1.opp === 0) score += SCORE_TERRITORY_BASE;
-  if (r2.own >= 3 && r2.opp <= 1) score += 12;
+  if (r1.own >= 2 && r1.opp === 0) score += 10;
+  if (r2.own >= 3 && r2.opp <= 1) score += SCORE_TERRITORY_BASE;
+  if (r2.own >= 2 && r1.own <= 1 && r2.opp <= 1) score += 16; // ケイマ・一間トビ風の広がり
   if (r1.own === 0 && r2.own === 0 && moveNo > 10) score -= 10;
 
   // 9路では完全な中央一辺倒にすると弱いので、中央〜やや内側をほどよく好む。
-  if (isCenterish(x, y)) score += SCORE_CENTER_BONUS;
-  if (x >= 3 && x <= 5 && y >= 3 && y <= 5) score += 6;
+  if (isCenterish(x, y)) score += 12;
+  if (x >= 3 && x <= 5 && y >= 3 && y <= 5) score += 4;
 
   // 序盤の1線・2線は地を作りにくい。終盤はヨセとして少し許す。
   if (openingPhase(moveNo)) {
@@ -950,10 +952,11 @@ function starThreatPenalty(brd, color) {
       g.stones.forEach(([sx, sy]) => visited.add(`${sx},${sy}`));
 
       const libs = g.liberties.size;
+      // v1.0b: 星石警戒は残すが、前版より弱める。怖がりすぎると展開力が落ちる。
       if (libs === 1) {
-        penalty -= 95 + g.stones.length * 16;
-      } else if (libs === 2) {
         penalty -= 42 + g.stones.length * 8;
+      } else if (libs === 2) {
+        penalty -= 16 + g.stones.length * 4;
       }
     }
   }
@@ -991,6 +994,22 @@ function evaluateBoard(brd, color) {
   return score;
 }
 
+function ownEyeFillPenalty(brd, x, y, color, moveNo, capturedCount, isRescuePoint) {
+  const r1 = countAround(brd, x, y, color, 1);
+  const r2 = countAround(brd, x, y, color, 2);
+  let penalty = 0;
+
+  // 自分の地・眼になりそうな空点を、意味なく自分で埋める癖を抑える。
+  // ただし、取る手・アタリを救う手は必要手なので強く罰しない。
+  if (capturedCount === 0 && !isRescuePoint && r1.opp === 0) {
+    if (r1.own >= 4) penalty -= moveNo < 45 ? 95 : 45;
+    else if (r1.own === 3 && r2.own >= 4) penalty -= moveNo < 45 ? 58 : 24;
+    else if (r1.own === 2 && r2.own >= 5 && moveNo < 35) penalty -= 24;
+  }
+
+  return penalty;
+}
+
 function moveHeuristicOn(brd, x, y, color, koP, moveNo) {
   const tmp = cloneBoard(brd);
   const result = placeStonePure(tmp, x, y, color, koP);
@@ -1002,9 +1021,11 @@ function moveHeuristicOn(brd, x, y, color, koP, moveNo) {
   const selfAfter = getGroup(tmp, x, y);
   let score = 0;
 
+  const isRescuePoint = atariPoints.has(`${x},${y}`);
+
   // 1. 戦術: 取る、逃げる、相手のアタリ石を逃がさない。
   if (result.captured.length > 0) score += SCORE_CAPTURE + result.captured.length * 18;
-  if (atariPoints.has(`${x},${y}`)) score += SCORE_ESCAPE_ATARI;
+  if (isRescuePoint) score += SCORE_ESCAPE_ATARI;
   if (oppAtari.has(`${x},${y}`)) score += 34;
 
   // 2. 自分の着手後の安全性。
@@ -1015,6 +1036,7 @@ function moveHeuristicOn(brd, x, y, color, koP, moveNo) {
 
   // 3. 地の骨格・模様・中央〜やや内側。
   score += territoryPotential(brd, x, y, color, moveNo);
+  score += ownEyeFillPenalty(brd, x, y, color, moveNo, result.captured.length, isRescuePoint);
 
   // 4. 近接補正。孤立しすぎず、くっつきすぎない。
   if (hasAdjacentStoneOn(brd, x, y)) score += SCORE_NEAR_STONE;
@@ -1064,8 +1086,8 @@ function lookaheadScore(x, y, color) {
     // 相手は自分にとって一番不利な局面を選んでくる。
     let afterReplyScore = evaluateBoard(second, color);
 
-    // 相手視点で強い手ほど、自分には痛い手として追加で減点する。
-    afterReplyScore -= reply.score * 0.32;
+    // v1.0b: reply.score は相手視点の候補選別にだけ使う。
+    // ここで大きく減点すると「相手の形の良さ」を二重計上し、読みが臆病になりすぎる。
 
     // 3手目: 自分がどれだけ立て直せるかを見る。
     const myReplies = getLegalMovesPure(second, color, secondResult.newKo);
@@ -1080,7 +1102,7 @@ function lookaheadScore(x, y, color) {
         if (rescueScore > bestRescue) bestRescue = rescueScore;
       }
       if (bestRescue > -Infinity) {
-        afterReplyScore = afterReplyScore * 0.55 + bestRescue * 0.45;
+        afterReplyScore = afterReplyScore * 0.72 + bestRescue * 0.28;
       }
     }
 
@@ -1089,7 +1111,7 @@ function lookaheadScore(x, y, color) {
   }
 
   if (worstAfterReply === Infinity) return firstScore;
-  return firstScore * 0.42 + worstAfterReply * 0.58;
+  return firstScore * 0.55 + worstAfterReply * 0.45;
 }
 
 function decideStarUsage(pick, color, moveNo) {
@@ -1155,7 +1177,7 @@ function advancedAI(legalMoves, color) {
 
   const scored = candidates.map(m => {
     const reading = lookaheadScore(m.x, m.y, color);
-    const score = m.score * 0.40 + reading * 0.60 + Math.random() * SCORE_JITTER;
+    const score = m.score * 0.55 + reading * 0.45 + Math.random() * SCORE_JITTER;
     return { x: m.x, y: m.y, score, baseScore: m.score, reading };
   }).filter(m => Number.isFinite(m.score))
     .sort((a, b) => b.score - a.score);
