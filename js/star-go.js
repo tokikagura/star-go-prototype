@@ -552,16 +552,94 @@ function territoryPotential(brd, x, y, color, moveNo) {
   return score;
 }
 
-// 【v1.5】ピュア中国ルール領地・石数一括カウンター
-function calculateFinalScore() {
+// ═══════════════════════════════════════════════════════════
+//  ★ v1.7 Final-position adjudication
+//  Chinese-style area scoring + conservative removal of
+//  clearly dead low-liberty groups after two consecutive passes.
+// ═══════════════════════════════════════════════════════════
+function secureEyeRegionsForGroup(brd, group, color) {
+  const liberties = new Set(group.liberties);
+  const checked = new Set();
+  const eyes = [];
+
+  for (const lib of liberties) {
+    if (checked.has(lib)) continue;
+    const [sx, sy] = lib.split(',').map(Number);
+    const stack = [[sx, sy]];
+    checked.add(lib);
+    const region = [];
+    const borderColors = new Set();
+
+    while (stack.length) {
+      const [x, y] = stack.pop();
+      region.push([x, y]);
+      for (const [nx, ny] of neighbors(x, y)) {
+        const v = brd[ny][nx];
+        if (v === EMPTY) {
+          const key = `${nx},${ny}`;
+          if (!checked.has(key)) { checked.add(key); stack.push([nx, ny]); }
+        } else {
+          borderColors.add(v);
+        }
+      }
+    }
+
+    // A secure eye region is an empty region bordered only by this color.
+    if (borderColors.size === 1 && borderColors.has(color)) eyes.push(region);
+  }
+  return eyes;
+}
+
+function groupHasPlausibleEscape(brd, group, color) {
+  for (const lib of group.liberties) {
+    const [x, y] = lib.split(',').map(Number);
+    const tmp = cloneBoard(brd);
+    const res = placeStonePure(tmp, x, y, color, null);
+    if (!res.ok) continue;
+
+    const nextGroup = getGroup(tmp, x, y);
+    if (res.captured.length > 0) return true;
+    if (nextGroup.liberties.size >= 3) return true;
+    if (secureEyeRegionsForGroup(tmp, nextGroup, color).length >= 2) return true;
+  }
+  return false;
+}
+
+function findObviousDeadStones(brd) {
+  const dead = [];
+  const visited = new Set();
+
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const color = brd[y][x];
+      if (color !== BLACK && color !== WHITE) continue;
+      const key = `${x},${y}`;
+      if (visited.has(key)) continue;
+
+      const group = getGroup(brd, x, y);
+      group.stones.forEach(([gx, gy]) => visited.add(`${gx},${gy}`));
+
+      // Keep this deliberately conservative.  Groups with room to run,
+      // capture, or make two secure eyes are not auto-removed.
+      if (group.liberties.size > 2) continue;
+      if (secureEyeRegionsForGroup(brd, group, color).length >= 2) continue;
+      if (groupHasPlausibleEscape(brd, group, color)) continue;
+
+      for (const [gx, gy] of group.stones) dead.push({ x: gx, y: gy, color });
+    }
+  }
+  return dead;
+}
+
+function calculateAreaScoreOn(brd) {
   let blackPoints = 0;
   let whitePoints = 0;
   const visited = Array.from({ length: SIZE }, () => Array(SIZE).fill(false));
 
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
-      if (board[y][x] === BLACK) { blackPoints++; } 
-      else if (board[y][x] === WHITE) { whitePoints++; } 
+      if (brd[y][x] === BLACK) { blackPoints++; }
+      else if (brd[y][x] === WHITE) { whitePoints++; }
       else if (!visited[y][x]) {
         const queue = [[x, y]];
         const region = [[x, y]];
@@ -572,14 +650,14 @@ function calculateFinalScore() {
         while (head < queue.length) {
           const [cx, cy] = queue[head++];
           for (const [nx, ny] of neighbors(cx, cy)) {
-            if (board[ny][nx] === EMPTY) {
+            if (brd[ny][nx] === EMPTY) {
               if (!visited[ny][nx]) {
                 visited[ny][nx] = true;
                 queue.push([nx, ny]);
                 region.push([nx, ny]);
               }
             } else {
-              borders.add(board[ny][nx]);
+              borders.add(brd[ny][nx]);
             }
           }
         }
@@ -591,6 +669,27 @@ function calculateFinalScore() {
     }
   }
   return { black: blackPoints, white: whitePoints };
+}
+
+function calculateFinalScore() {
+  const scoreBoard = cloneBoard(board);
+  const deadStones = findObviousDeadStones(scoreBoard);
+  let deadBlack = 0;
+  let deadWhite = 0;
+
+  for (const d of deadStones) {
+    scoreBoard[d.y][d.x] = EMPTY;
+    if (d.color === BLACK) deadBlack++; else deadWhite++;
+  }
+
+  const area = calculateAreaScoreOn(scoreBoard);
+  return {
+    black: area.black,
+    white: area.white,
+    deadBlack,
+    deadWhite,
+    deadStones
+  };
 }
 
 function groupLibertyScore(brd, color) {
@@ -1237,7 +1336,7 @@ function aiForCurrentColor() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  ★ v1.6 Endgame Pass Judge
+//  ★ v1.7 Endgame Pass / Zombie-Move Judge
 //  CPU should pass when every remaining legal move is merely
 //  filling settled own territory or a clearly doomed invasion.
 // ═══════════════════════════════════════════════════════════
@@ -1281,36 +1380,48 @@ function isMeaningfulEndgameMove(brd, x, y, color, koP, rescuePoints) {
   const res = placeStonePure(tmp, x, y, color, koP);
   if (!res.ok) return false;
 
-  // Captures and saving an atari group are always meaningful.
+  // Captures are concrete progress.
   if (res.captured.length > 0) return true;
-  if (rescuePoints.has(`${x},${y}`)) return true;
 
   const region = emptyRegionInfoOn(brd, x, y);
   const ownGroup = getGroup(tmp, x, y);
+  const secureEyes = secureEyeRegionsForGroup(tmp, ownGroup, color).length;
 
-  // Filling a reasonably settled own territory changes nothing useful
-  // under the current area-scoring rule.
+  // Filling settled own territory changes nothing useful under area scoring.
   if (region.settled && region.owner === color) return false;
 
-  // A low-liberty drop into settled enemy territory is the old "zombie" move.
-  if (region.settled && region.owner === 1 - color && ownGroup.liberties.size <= 2) {
-    return false;
+  // v1.7: do not treat every atari escape as automatically valuable.
+  // If the rescued group is still cramped and cannot make a plausible escape,
+  // continuing to feed stones into it is the "zombie" behaviour seen in v1.6.
+  if (rescuePoints.has(`${x},${y}`)) {
+    if (ownGroup.liberties.size <= 2 && secureEyes < 2 &&
+        !groupHasPlausibleEscape(tmp, ownGroup, color)) return false;
+    return true;
   }
+
+  // A cramped invasion into settled enemy territory is not a useful move.
+  if (region.settled && region.owner === 1 - color && secureEyes < 2 &&
+      ownGroup.liberties.size <= 3) return false;
+
+  // Any newly-created group already reduced to two liberties with no route
+  // to capture/run/live is also filtered out late in the game.
+  if (totalMoves >= 28 && ownGroup.liberties.size <= 2 && secureEyes < 2 &&
+      !groupHasPlausibleEscape(tmp, ownGroup, color)) return false;
 
   // Dame, unsettled regions, safe invasions and fighting moves remain candidates.
   return true;
 }
 
-function shouldCpuPass(legalMoves, color) {
-  if (!legalMoves.length) return true;
-
+function meaningfulCpuMoves(legalMoves, color) {
+  if (!legalMoves.length) return [];
   const rescuePoints = getAtariPointsOn(board, color);
-  for (const [x, y] of legalMoves) {
-    if (isMeaningfulEndgameMove(board, x, y, color, koPoint, rescuePoints)) {
-      return false;
-    }
-  }
-  return true;
+  return legalMoves.filter(([x, y]) =>
+    isMeaningfulEndgameMove(board, x, y, color, koPoint, rescuePoints)
+  );
+}
+
+function shouldCpuPass(legalMoves, color) {
+  return meaningfulCpuMoves(legalMoves, color).length === 0;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1341,23 +1452,28 @@ function cpuTurn() {
 
   const color = current;
 
-  // 【v1.6】合法手が残っていても、残りが自陣埋め・無謀侵入だけなら終局へ向けてPass。
+  // 【v1.7】終盤では「意味のある合法手」だけをAIの候補へ渡す。
+  // v1.6はPass判定だけに使っていたため、意味のある手が1つでもあると
+  // AI本体が別のゾンビ手を選べてしまっていた。
+  let playableLegal = legal;
   try {
-    if (shouldCpuPass(legal, color)) { doPass(); return; }
+    const meaningful = meaningfulCpuMoves(legal, color);
+    if (meaningful.length === 0) { doPass(); return; }
+    playableLegal = meaningful;
   } catch (e) {
-    // Pass judge is a safety layer; if it fails, keep the existing AI pipeline alive.
+    playableLegal = legal;
   }
 
   const moveNo = totalMoves + 1;
   let decision = null;
   try {
-    decision = ai === 'classic' ? classicAI(legal, color)
-             : ai === 'expert' ? expertAI(legal, color)
-             : advancedAI(legal, color);
+    decision = ai === 'classic' ? classicAI(playableLegal, color)
+             : ai === 'expert' ? expertAI(playableLegal, color)
+             : advancedAI(playableLegal, color);
   } catch(e) { decision = null; }
 
   if (!isValidDecisionForCurrentBoard(decision, color)) {
-    decision = fallbackLegalDecision(legal, color, moveNo);
+    decision = fallbackLegalDecision(playableLegal, color, moveNo);
   }
 
   // ─── 【v1.5 ゾンビ突撃・強制迎撃ガードレール】 ───
@@ -1381,8 +1497,8 @@ function cpuTurn() {
   }
 
   const ok = doMove(decision.x, decision.y, decision.useStar, decision.starColor);
-  if (!ok && legal.length > 0) {
-    const fb = fallbackLegalDecision(legal, color, moveNo);
+  if (!ok && playableLegal.length > 0) {
+    const fb = fallbackLegalDecision(playableLegal, color, moveNo);
     doMove(fb.x, fb.y, false, color);
   }
 }
@@ -1439,8 +1555,8 @@ function toSGFCoord(x, y) { return String.fromCharCode(97 + x) + String.fromChar
 function buildSGF() {
   const expireLabel = ['No Expiry', 'Locked at Empty<=25', 'Locked after Pass'][expireMode] || '';
   const modeLabel   = gameMode === 'human-expert' ? 'Human vs Expert' : gameMode === 'human-advanced' ? 'Human vs Advanced' : gameMode === 'human-classic' ? 'Human vs Classic' : 'CPU Match';
-  const rootComment = `星囲碁 / Hoshi Go Test Type v1.6. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.6]C[${rootComment}]`;
+  const rootComment = `星囲碁 / Hoshi Go Test Type v1.7. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.7]C[${rootComment}]`;
 
   for (const e of moveLog) {
     const playerName = e.player === BLACK ? 'Black' : 'White';
@@ -1568,12 +1684,23 @@ function doPass() {
   moveLog.push({ moveNo: totalMoves, player: current, type: 'pass' });
   renderLog(); updateStats();
   
-  // 【v1.5仕様】両者連続パス時の自動勝敗判定トリガー
+  // 【v1.7】両者連続パス時に、明白な死石を保守的に除去してから面積計算。
   if (consecutivePasses >= 2) {
     const score = calculateFinalScore();
+
+    // Keep the final board display consistent with the score.
+    for (const d of score.deadStones) {
+      board[d.y][d.x] = EMPTY;
+      starStones.delete(`${d.x},${d.y}`);
+    }
+    drawBoard();
+
     let resultStr = `Both passed (Black: ${score.black} | White: ${score.white}). `;
-    if (score.black > score.white) { resultStr += "🏆 Black wins!"; } 
-    else if (score.white > score.black) { resultStr += "🏆 White wins!"; } 
+    if (score.deadBlack || score.deadWhite) {
+      resultStr += `[Dead removed B:${score.deadBlack} W:${score.deadWhite}] `;
+    }
+    if (score.black > score.white) { resultStr += "🏆 Black wins!"; }
+    else if (score.white > score.black) { resultStr += "🏆 White wins!"; }
     else { resultStr += "Draw!"; }
     endGame(resultStr);
     return;
