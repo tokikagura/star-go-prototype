@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  星囲碁 / Hoshi Go Test Type v1.5
+  星囲碁 / Hoshi Go Test Type v1.6
   Concept & Design: 刻神楽 (_tokikagura)
   Implementation support: AI-assisted prototyping
   
@@ -13,7 +13,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 | Hoshi Go Test Type v1.5</title>
+  <title>星囲碁 | Hoshi Go Test Type v1.6</title>
   <style>
 /* ════════════════════════════════
    Reset & Base
@@ -324,7 +324,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 <div id="app">
 
   <!-- Test Type Header Designation -->
-  <div id="title-bar">★ 星囲碁 | Hoshi Go v1.5</div>
+  <div id="title-bar">★ 星囲碁 | Hoshi Go v1.6</div>
   <div id="test-version-tag">⚠️ Early Test Version. AI is being improved. Feedback welcome.</div>
 
   <!-- Game Status -->
@@ -1692,6 +1692,83 @@ function aiForCurrentColor() {
 }
 
 // ═══════════════════════════════════════════════════════════
+//  ★ v1.6 Endgame Pass Judge
+//  CPU should pass when every remaining legal move is merely
+//  filling settled own territory or a clearly doomed invasion.
+// ═══════════════════════════════════════════════════════════
+function emptyRegionInfoOn(brd, startX, startY) {
+  if (!inBounds(startX, startY) || brd[startY][startX] !== EMPTY) {
+    return { owner: null, size: 0, borderCount: 0, settled: false };
+  }
+
+  const stack = [[startX, startY]];
+  const seen = new Set([`${startX},${startY}`]);
+  const borderColors = new Set();
+  const borderStones = new Set();
+  let size = 0;
+
+  while (stack.length) {
+    const [x, y] = stack.pop();
+    size++;
+    for (const [nx, ny] of neighbors(x, y)) {
+      const v = brd[ny][nx];
+      if (v === EMPTY) {
+        const k = `${nx},${ny}`;
+        if (!seen.has(k)) { seen.add(k); stack.push([nx, ny]); }
+      } else {
+        borderColors.add(v);
+        borderStones.add(`${nx},${ny}`);
+      }
+    }
+  }
+
+  const owner = borderColors.size === 1 ? [...borderColors][0] : null;
+  const borderCount = borderStones.size;
+
+  // A lone stone must not claim the whole open board as "settled territory".
+  // Require a real boundary and a reasonable enclosed-area / boundary ratio.
+  const settled = owner !== null && borderCount >= 3 && size <= borderCount * 3 + 2;
+  return { owner, size, borderCount, settled };
+}
+
+function isMeaningfulEndgameMove(brd, x, y, color, koP, rescuePoints) {
+  const tmp = cloneBoard(brd);
+  const res = placeStonePure(tmp, x, y, color, koP);
+  if (!res.ok) return false;
+
+  // Captures and saving an atari group are always meaningful.
+  if (res.captured.length > 0) return true;
+  if (rescuePoints.has(`${x},${y}`)) return true;
+
+  const region = emptyRegionInfoOn(brd, x, y);
+  const ownGroup = getGroup(tmp, x, y);
+
+  // Filling a reasonably settled own territory changes nothing useful
+  // under the current area-scoring rule.
+  if (region.settled && region.owner === color) return false;
+
+  // A low-liberty drop into settled enemy territory is the old "zombie" move.
+  if (region.settled && region.owner === 1 - color && ownGroup.liberties.size <= 2) {
+    return false;
+  }
+
+  // Dame, unsettled regions, safe invasions and fighting moves remain candidates.
+  return true;
+}
+
+function shouldCpuPass(legalMoves, color) {
+  if (!legalMoves.length) return true;
+
+  const rescuePoints = getAtariPointsOn(board, color);
+  for (const [x, y] of legalMoves) {
+    if (isMeaningfulEndgameMove(board, x, y, color, koPoint, rescuePoints)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// ═══════════════════════════════════════════════════════════
 //  Main Move Handlers & Loop Engine
 // ═══════════════════════════════════════════════════════════
 function cpuTurn() {
@@ -1718,6 +1795,14 @@ function cpuTurn() {
   if (legal.length === 0) { doPass(); return; }
 
   const color = current;
+
+  // 【v1.6】合法手が残っていても、残りが自陣埋め・無謀侵入だけなら終局へ向けてPass。
+  try {
+    if (shouldCpuPass(legal, color)) { doPass(); return; }
+  } catch (e) {
+    // Pass judge is a safety layer; if it fails, keep the existing AI pipeline alive.
+  }
+
   const moveNo = totalMoves + 1;
   let decision = null;
   try {
@@ -1809,8 +1894,8 @@ function toSGFCoord(x, y) { return String.fromCharCode(97 + x) + String.fromChar
 function buildSGF() {
   const expireLabel = ['No Expiry', 'Locked at Empty<=25', 'Locked after Pass'][expireMode] || '';
   const modeLabel   = gameMode === 'human-expert' ? 'Human vs Expert' : gameMode === 'human-advanced' ? 'Human vs Advanced' : gameMode === 'human-classic' ? 'Human vs Classic' : 'CPU Match';
-  const rootComment = `星囲碁 / Hoshi Go Test Type v1.5. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.5]C[${rootComment}]`;
+  const rootComment = `星囲碁 / Hoshi Go Test Type v1.6. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.6]C[${rootComment}]`;
 
   for (const e of moveLog) {
     const playerName = e.player === BLACK ? 'Black' : 'White';
