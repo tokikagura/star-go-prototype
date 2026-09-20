@@ -77,7 +77,7 @@ let board    = [];
 let current  = BLACK;
 let koPoint  = null;
 
-// 【v1.8】盤面反復（長いコウ循環を含む）を禁止するための局面履歴。
+// 【v1.81】盤面反復（長いコウ循環を含む）を禁止するための局面履歴。
 // 単純コウの1点禁止だけでは、複数地点を巡る循環を止められない。
 let positionHistory = new Set();
 
@@ -571,7 +571,7 @@ function territoryPotential(brd, x, y, color, moveNo) {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  ★ v1.8 Final-position adjudication
+//  ★ v1.81 Final-position adjudication
 //  Chinese-style area scoring + conservative removal of
 //  clearly dead low-liberty groups after two consecutive passes.
 // ═══════════════════════════════════════════════════════════
@@ -1354,7 +1354,7 @@ function aiForCurrentColor() {
 }
 
 // ═══════════════════════════════════════════════════════════
-//  ★ v1.8 Endgame Pass / Zombie-Move Judge
+//  ★ v1.81 Endgame Pass / Zombie-Move Judge
 //  CPU should pass when every remaining legal move is merely
 //  filling settled own territory or a clearly doomed invasion.
 // ═══════════════════════════════════════════════════════════
@@ -1408,7 +1408,7 @@ function isMeaningfulEndgameMove(brd, x, y, color, koP, rescuePoints) {
   // Filling settled own territory changes nothing useful under area scoring.
   if (region.settled && region.owner === color) return false;
 
-  // v1.8: do not treat every atari escape as automatically valuable.
+  // v1.81: do not treat every atari escape as automatically valuable.
   // If the rescued group is still cramped and cannot make a plausible escape,
   // continuing to feed stones into it is the "zombie" behaviour seen in v1.6.
   if (rescuePoints.has(`${x},${y}`)) {
@@ -1474,7 +1474,7 @@ function cpuTurn() {
 
   const color = current;
 
-  // 【v1.8】終盤では「意味のある合法手」だけをAIの候補へ渡す。
+  // 【v1.81】終盤では「意味のある合法手」だけをAIの候補へ渡す。
   // v1.6はPass判定だけに使っていたため、意味のある手が1つでもあると
   // AI本体が別のゾンビ手を選べてしまっていた。
   let playableLegal = legal;
@@ -1577,8 +1577,8 @@ function toSGFCoord(x, y) { return String.fromCharCode(97 + x) + String.fromChar
 function buildSGF() {
   const expireLabel = ['No Expiry', 'Locked at Empty<=25', 'Locked after Pass'][expireMode] || '';
   const modeLabel   = gameMode === 'human-expert' ? 'Human vs Expert' : gameMode === 'human-advanced' ? 'Human vs Advanced' : gameMode === 'human-classic' ? 'Human vs Classic' : 'CPU Match';
-  const rootComment = `星囲碁 / Hoshi Go Test Type v1.8. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.8]C[${rootComment}]`;
+  const rootComment = `星囲碁 / Hoshi Go Test Type v1.81. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.81]C[${rootComment}]`;
 
   for (const e of moveLog) {
     const playerName = e.player === BLACK ? 'Black' : 'White';
@@ -1681,7 +1681,7 @@ function doMove(x, y, isStar, starColor) {
     return false;
   }
 
-  // 【v1.8】Superko: 過去に出現した盤面への復帰を禁止。
+  // 【v1.81】Superko: 過去に出現した盤面への復帰を禁止。
   // v1.7では koPoint だけだったため、複数地点を巡る循環が永久に続けられた。
   const newPositionKey = boardPositionKey(board);
   if (positionHistory.has(newPositionKey)) {
@@ -1716,7 +1716,7 @@ function doPass() {
   moveLog.push({ moveNo: totalMoves, player: current, type: 'pass' });
   renderLog(); updateStats();
   
-  // 【v1.8】両者連続パス時に、明白な死石を保守的に除去してから面積計算。
+  // 【v1.81】両者連続パス時に、明白な死石を保守的に除去してから面積計算。
   if (consecutivePasses >= 2) {
     const score = calculateFinalScore();
 
