@@ -1861,8 +1861,26 @@ function emptyRegionInfoOn(brd, startX, startY) {
 
   // A lone stone must not claim the whole open board as "settled territory".
   // Require a real boundary and a reasonable enclosed-area / boundary ratio.
-  const settled = owner !== null && borderCount >= 3 && size <= borderCount * 3 + 2;
+  // 【v1.7.1】序盤を過ぎたら、片方の色だけに囲まれた空き地は大きさに関係なくその色の地とみなす。
+  // (以前は広い自陣を「未確定」と判定し、自陣を埋め続けて眼を失う原因になっていた)
+  const settled = owner !== null && borderCount >= 3 &&
+    (size <= borderCount * 3 + 2 || totalMoves >= 20);
   return { owner, size, borderCount, settled };
+}
+
+// 【v1.7.1】自分の眼か:上下左右がすべて自分の石(か盤端)で、斜めの相手の石が少ない点。
+// 自分の眼を埋める手は石を取ることがなく、眼を減らすだけなのでCPUは打たない。
+function isOwnEye(brd, x, y, color) {
+  if (brd[y][x] !== EMPTY) return false;
+  for (const [nx, ny] of neighbors(x, y)) {
+    if (brd[ny][nx] !== color) return false;
+  }
+  let oppDiag = 0, offBoard = 0;
+  for (const [dx, dy] of [[x-1, y-1], [x+1, y-1], [x-1, y+1], [x+1, y+1]]) {
+    if (!inBounds(dx, dy)) { offBoard++; continue; }
+    if (brd[dy][dx] === 1 - color) oppDiag++;
+  }
+  return offBoard > 0 ? oppDiag === 0 : oppDiag <= 1;
 }
 
 function isMeaningfulEndgameMove(brd, x, y, color, koP, rescuePoints) {
@@ -1925,10 +1943,9 @@ function cpuTurn() {
     }
   }
 
-  const legal = getLegalMoves(board, current, koPoint);
-  if (legal.length === 0) { doPass(); return; }
-
   const color = current;
+  // 【v1.7.1】自分の眼を埋める手は候補から外す
+  let legal = getLegalMoves(board, current, koPoint).filter(([x, y]) => !isOwnEye(board, x, y, color));
 
   // 【v1.7】Expertは、相手色の星石で確実に石を取れるなら、パス判定より先にそれを打つ
   if (ai === 'expert') {
@@ -1937,11 +1954,22 @@ function cpuTurn() {
     if (killDecision && doMove(killDecision.x, killDecision.y, true, killDecision.starColor)) return;
   }
 
+  if (legal.length === 0) { doPass(); return; }
+
   // 【v1.6】合法手が残っていても、残りが自陣埋め・無謀侵入だけなら終局へ向けてPass。
   try {
     if (shouldCpuPass(legal, color)) { doPass(); return; }
   } catch (e) {
     // Pass judge is a safety layer; if it fails, keep the existing AI pipeline alive.
+  }
+
+  // 【v1.7.1】序盤を過ぎたら、自陣埋めなど意味のない手を候補から外してからAIに選ばせる
+  if (totalMoves >= 20) {
+    try {
+      const rescuePoints = getAtariPointsOn(board, color);
+      const meaningful = legal.filter(([x, y]) => isMeaningfulEndgameMove(board, x, y, color, koPoint, rescuePoints));
+      if (meaningful.length) legal = meaningful;
+    } catch (e) {}
   }
 
   const moveNo = totalMoves + 1;
