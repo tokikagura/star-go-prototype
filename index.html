@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  星囲碁 / Hoshi Go Test Type v1.7
+  星囲碁 / Hoshi Go Test Type v1.7.1
   Concept & Design: 刻神楽 (_tokikagura)
   Implementation support: AI-assisted prototyping
   
@@ -13,7 +13,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>星囲碁 | Hoshi Go Test Type v1.7</title>
+  <title>星囲碁 | Hoshi Go Test Type v1.7.1</title>
   <style>
 /* ════════════════════════════════
    Reset & Base
@@ -324,7 +324,7 @@ label { font-size: 0.82rem; cursor: pointer; }
 <div id="app">
 
   <!-- Test Type Header Designation -->
-  <div id="title-bar">★ 星囲碁 | Hoshi Go v1.7</div>
+  <div id="title-bar">★ 星囲碁 | Hoshi Go v1.7.1</div>
   <div id="test-version-tag">⚠️ Early Test Version. AI is being improved. Feedback welcome.</div>
 
   <!-- Game Status -->
@@ -2063,8 +2063,8 @@ function toSGFCoord(x, y) { return String.fromCharCode(97 + x) + String.fromChar
 function buildSGF() {
   const expireLabel = ['No Expiry', 'Locked at Empty<=25', 'Locked after Pass'][expireMode] || '';
   const modeLabel   = gameMode === 'human-expert' ? 'Human vs Expert' : gameMode === 'human-advanced' ? 'Human vs Advanced' : gameMode === 'human-classic' ? 'Human vs Classic' : 'CPU Match';
-  const rootComment = `星囲碁 / Hoshi Go Test Type v1.7. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
-  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.7]C[${rootComment}]`;
+  const rootComment = `星囲碁 / Hoshi Go Test Type v1.7.1. Mode: ${modeLabel}. StarExpire: ${expireLabel}.`;
+  let sgf = `(;GM[1]FF[4]CA[UTF-8]SZ[9]KM[0]AP[Hoshigo:1.7.1]C[${rootComment}]`;
 
   for (const e of moveLog) {
     const playerName = e.player === BLACK ? 'Black' : 'White';
